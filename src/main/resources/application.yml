@@ -1,0 +1,34 @@
+server:
+  port: ${PORT:5500}
+
+spring:
+  application:
+    name: bill-pilot
+  data:
+    mongodb:
+      uri: ${DB_URI:mongodb://localhost:27017/bill-pilot}
+      database: ${DB_NAME:test}
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${EMAIL_USER:lymo.network@gmail.com}
+    password: ${EMAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:dGhpcy1pcy1hLXZlcnktc2VjdXJlLWFuZC1sb25nLWp3dC1zZWNyZXQta2V5LWZvci1iaWxsLXBpbG90}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  rate-limit:
+    capacity: ${RATE_LIMIT_CAPACITY:100}
+    refill-tokens: ${RATE_LIMIT_REFILL_TOKENS:20}
+    refill-duration-seconds: ${RATE_LIMIT_REFILL_DURATION:10}
+  mail:
+    sender-email: ${EMAIL_USER:lymo.network@gmail.com}
+    sender-name: "The Bill Pilot Team"
