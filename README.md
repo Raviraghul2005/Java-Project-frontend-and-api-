@@ -1,161 +1,127 @@
-# 🧾 Bill Pilot — Java Spring Boot Backend API
+# 🧾 Bill Pilot — Autonomous Subscription Intelligence & Fatigue Audit Engine
 
-A production-grade subscription tracking and automated renewal notification REST API built with **Java 25 LTS** and **Spring Boot 3.4**. This is an exact 1:1 functional port and enhancement of the Node.js/Express backend.
+A production-grade, research-defensible subscription intelligence platform built with **Java 25 LTS**, **Spring Boot 3.4**, and **Next.js 16.4 (App Router)**.
 
 ---
 
-## 🚀 Features
+## 🔬 Core Academic Novelty: Subscription Intelligence Engine
 
-- **Authentication & Security**:
-  - Stateless JWT token generation & verification (`io.jsonwebtoken`).
-  - Passwords encrypted with `BCryptPasswordEncoder`.
-  - Spring Security with custom `OncePerRequestFilter` and CORS support.
-- **High-Performance Rate Limiting**:
-  - Token-bucket algorithm via **Bucket4j** (Capacity: 10, Refill: 5 tokens / 10s), mirroring Arcjet without external latency or SaaS dependencies.
-- **Data Modeling & MongoDB**:
-  - Spring Data MongoDB documents for `User` and `Subscription`.
-  - Automatic renewal calculation (`daily` +1d, `weekly` +7d, `monthly` +30d, `yearly` +365d) and auto-expiration detection.
-- **Automated Renewal Reminders**:
-  - Resilient daily scheduled engine (`@Scheduled`) checking for renewals due in 7, 5, 2, and 1 days.
-  - On-demand / webhook execution endpoint `/api/v1/workflows/subscription/reminder`.
-  - HTML emails dispatched asynchronously using `JavaMailSender` (Gmail SMTP).
-- **Unified Error Handling**:
-  - `@RestControllerAdvice` returning standard Express-compatible error schemas.
+Standard applications merely act as passive ledgers that record bills and send reminders. **Bill Pilot transforms passive tracking into an algorithmic auditing and fatigue prevention engine**:
+
+### 1. Subscription Fatigue Index (SFI) [Heuristic Score: 0–100]
+A deterministic mathematical model evaluating the cognitive clutter, financial run-rate, and domain saturation of recurring commitments:
+$$\text{SFI} = \text{clamp}(0, 100, [4.5 \times N_{\text{active}}] + [12.0 \times R_{\text{redundancy}}] + \min(30, \frac{\text{Spend}_{\text{monthly}}}{15}) + [6.0 \times C_{\text{collisions}}])$$
+
+- **OPTIMAL (0–30)**: Lean, non-overlapping stack with minimal mental load.
+- **MODERATE (31–60)**: Controlled recurring footprint with isolated minor clusters.
+- **ELEVATED (61–80)**: Emerging fatigue; heavy functional duplication in core categories.
+- **CRITICAL BURNOUT (81–100)**: Severe subscription saturation with massive compounding wealth leakage.
+
+### 2. Functional Redundancy Matrix (Overlap Detection)
+Isolates multiple active services competing within the exact same utility domain:
+- **Streaming & Media Stack Saturation**: Flags duplicate active services (e.g., Netflix + Disney+ + HBO Max) and calculates the **Rotational Arbitrage Savings** (saving ~60% by rotating sequentially rather than paying concurrently).
+- **Developer & AI Stack Redundancy**: Isolates overlapping LLM assistants (e.g., ChatGPT Plus + Claude Pro + GitHub Copilot).
+
+### 3. Vampire Drain & 5-Year S&P 500 Opportunity Cost Projector
+Computes long-term compounding cash drag against an index fund yielding 7% APR ($FV = P \times \frac{(1 + r/12)^{60} - 1}{r/12}$).
+- Flags **High-Drain Vampire Subscriptions** that quietly consume over $600 to $1,500 in 5-year opportunity cost.
+
+### 4. What-If Arbitrage Simulator Lab
+An interactive decision-support sandbox enabling users to simulate pruning redundant services and switching monthly plans to discounted annual billing (recovering cashflow and flattening the renewal curve in real time).
 
 ---
 
 ## 🛠 Tech Stack
 
-| Component | Technology | Version |
+| Layer | Technology | Details |
 | :--- | :--- | :--- |
-| **Language** | Java SE (LTS) | 25.0.2 |
-| **Framework** | Spring Boot | 3.4.3 |
+| **Backend Language** | Java SE (LTS) | 25.0.2 |
+| **Backend Framework** | Spring Boot | 3.4.3 |
 | **Build Tool** | Apache Maven | 3.9.14 |
 | **Database** | MongoDB | Spring Data MongoDB |
-| **JWT** | JJWT (`jjwt-api`, `jjwt-impl`, `jjwt-jackson`) | 0.12.6 |
-| **Rate Limiter** | Bucket4j (`bucket4j-core`) | 8.10.1 |
-| **Email** | Spring Boot Starter Mail (`JavaMailSender`) | 3.4.3 |
-| **Boilerplate** | Lombok | 1.18.38 |
+| **Rate Limiter** | Bucket4j | 8.10.1 (100 capacity, 20 refill / 10s) |
+| **Security & Auth** | Spring Security + JJWT | 0.12.6 (Stateless HMAC-SHA256) |
+| **Email Scheduler** | Spring Mail + `@Scheduled` | 3.4.3 (Gmail SMTP, MIME HTML) |
+| **Frontend Framework** | Next.js | 16.4.0 (Turbopack, App Router) |
+| **Frontend UI** | React 19 + Tailwind CSS + Glassmorphism | Dark Obsidian Theme |
 
 ---
 
-## 📁 Project Structure
+## 📁 Project Architecture
 
 ```
 d:/Java Project/
-├── pom.xml                                    # Maven configuration
-├── README.md                                  # Documentation & API reference
-└── src/
-    ├── main/
-    │   ├── java/com/billpilot/
-    │   │   ├── BillPilotApplication.java       # Main entry point (@EnableScheduling, @EnableAsync)
-    │   │   ├── config/
-    │   │   │   ├── MongoConfig.java            # Auditing config (@EnableMongoAuditing)
-    │   │   │   └── SecurityConfig.java         # Spring Security, CORS & PasswordEncoder
-    │   │   ├── controller/
-    │   │   │   ├── AuthController.java         # /api/v1/auth (sign-up, sign-in, sign-out)
-    │   │   │   ├── HomeController.java         # / (root welcome)
-    │   │   │   ├── SubscriptionController.java # /api/v1/subscriptions (CRUD, renewals, cancel)
-    │   │   │   ├── UserController.java         # /api/v1/users
-    │   │   │   └── WorkflowController.java     # /api/v1/workflows (reminders)
-    │   │   ├── dto/
-    │   │   │   ├── request/                    # SignUp, SignIn, Create/UpdateSubscription
-    │   │   │   └── response/                   # ApiResponse, AuthResponse, UserResponse
-    │   │   ├── exception/
-    │   │   │   ├── GlobalExceptionHandler.java # Centralized REST error handling
-    │   │   │   └── Custom Exceptions           # NotFound, Conflict, Unauthorized, Forbidden
-    │   │   ├── filter/
-    │   │   │   └── RateLimitFilter.java        # Bucket4j token bucket filter
-    │   │   ├── model/
-    │   │   │   ├── Category.java               # sports, news, entertainment, technology, etc.
-    │   │   │   ├── Frequency.java              # daily, weekly, monthly, yearly
-    │   │   │   ├── Subscription.java           # MongoDB document
-    │   │   │   ├── SubscriptionStatus.java     # active, cancelled, expired
-    │   │   │   └── User.java                   # MongoDB document
-    │   │   ├── repository/
-    │   │   │   ├── SubscriptionRepository.java # MongoRepository with custom queries
-    │   │   │   └── UserRepository.java         # MongoRepository with findByEmail
-    │   │   ├── security/
-    │   │   │   ├── JwtAuthenticationFilter.java# Bearer token interceptor
-    │   │   │   └── JwtService.java             # SecretKey signing and claim parsing
-    │   │   ├── service/
-    │   │   │   ├── AuthService.java            # Signup, signin, token minting
-    │   │   │   ├── EmailService.java           # Async MIME HTML email delivery
-    │   │   │   ├── ReminderSchedulerService.java # Scheduled reminder evaluator
-    │   │   │   ├── SubscriptionService.java    # Full subscription business logic
-    │   │   │   └── UserService.java            # User retrieval & deletion
-    │   │   └── util/
-    │   │       └── EmailTemplateBuilder.java   # Branded responsive HTML template
-    │   └── resources/
-    │       └── application.yml                 # Application settings & environment bindings
-    └── test/
-        └── java/com/billpilot/
-            ├── filter/RateLimitFilterTest.java
-            ├── model/SubscriptionModelTest.java
-            ├── security/JwtServiceTest.java
-            └── util/EmailTemplateBuilderTest.java
+├── pom.xml                                     # Spring Boot Maven POM
+├── src/                                        # Backend source code
+│   ├── main/java/com/billpilot/
+│   │   ├── BillPilotApplication.java
+│   │   ├── config/                             # Mongo & Security Config
+│   │   ├── controller/                         # Auth, Subscriptions, Workflows, Analytics
+│   │   │   ├── AnalyticsController.java        # /api/v1/analytics/audit (NOVELTY)
+│   │   │   ├── AuthController.java             # /api/v1/auth
+│   │   │   └── SubscriptionController.java     # /api/v1/subscriptions
+│   │   ├── dto/                                # Request & Response objects
+│   │   ├── filter/                             # RateLimitFilter (Bucket4j)
+│   │   ├── model/                              # Subscription, User, Enums
+│   │   ├── repository/                         # Spring Data Repositories
+│   │   ├── security/                           # JwtAuthenticationFilter & JwtService
+│   │   └── service/
+│   │       ├── AnalyticsService.java           # SFI & Redundancy Engine (NOVELTY)
+│   │       ├── AuthService.java
+│   │       ├── SubscriptionService.java
+│   │       └── ReminderSchedulerService.java
+│   └── test/                                   # 20/20 Passing Unit Tests
+└── frontend/                                   # Next.js 16 Application
+    ├── src/
+    │   ├── app/
+    │   │   ├── page.tsx                        # Fleet Deck / Command Center
+    │   │   ├── analytics/page.tsx              # Novelty SFI & Redundancy Audit
+    │   │   ├── simulator/page.tsx              # What-If Arbitrage Lab
+    │   │   ├── catalog/page.tsx                # Curated Preset Directory
+    │   │   ├── auth/page.tsx                   # Sign In & Registration Terminal
+    │   │   └── settings/page.tsx               # API Diagnostics & Data Export
+    │   ├── components/                         # Navbar, SubscriptionCard, FatigueGauge, Modal
+    │   ├── context/AppContext.tsx              # Unified Auth & State Store
+    │   └── lib/api.ts                          # Resilient REST API Client
+    └── public/logos/                           # 32 Curated Brand Logos
 ```
 
 ---
 
-## ⚙ Configuration & Environment Variables
+## 🚀 Running the Project
 
-All settings in `src/main/resources/application.yml` can be customized via environment variables:
-
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `PORT` | Server HTTP port | `5500` |
-| `DB_URI` | MongoDB connection URI | `mongodb://localhost:27017/bill-pilot` |
-| `JWT_SECRET` | Secret key for HMAC-SHA256 token signing | Built-in 256-bit key |
-| `JWT_EXPIRATION_MS`| JWT validity in milliseconds | `86400000` (24 hours) |
-| `EMAIL_USER` | Gmail address for sending notifications | `lymo.network@gmail.com` |
-| `EMAIL_PASSWORD` | Gmail App Password | (Empty / optional) |
-
----
-
-## 🚀 Running the Application
-
-### 1. Build and Test
-```bash
-mvn clean test
-```
-
-### 2. Run with Maven
+### 1. Run Spring Boot Backend (Port 5500)
 ```bash
 mvn spring-boot:run
 ```
-
-### 3. Run Packaged JAR
+Run all tests:
 ```bash
-mvn package
-java -jar target/bill-pilot-1.0.0.jar
+mvn test
 ```
+
+### 2. Run Next.js Frontend (Port 3000)
+```bash
+cd frontend
+npm run dev
+```
+Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ---
 
 ## 📡 API Reference
 
-### Root
-- `GET /` — Welcome message
+### Analytics & Novelty (`/api/v1/analytics`)
+- `GET /api/v1/analytics/audit` — Computes Subscription Fatigue Index (SFI), Redundancy Matrix, Vampire Drain projections, and 30-day renewal collisions.
 
 ### Authentication (`/api/v1/auth`)
-- `POST /api/v1/auth/sign-up` — Register new user
-- `POST /api/v1/auth/sign-in` — Authenticate user and receive JWT
-- `POST /api/v1/auth/sign-out` — Graceful sign-out
+- `POST /api/v1/auth/sign-up` — Register user & issue JWT
+- `POST /api/v1/auth/sign-in` — Authenticate user
+- `POST /api/v1/auth/sign-out` — Invalidate session
 
 ### Subscriptions (`/api/v1/subscriptions`)
-- `POST /api/v1/subscriptions` — Create subscription (Auto-calculates `renewalDate`)
-- `GET /api/v1/subscriptions/user/{userId}` — Get user's subscriptions (Requires token ownership)
-- `GET /api/v1/subscriptions/upcoming-renewals` — Get subscriptions renewing within 7 days
-- `GET /api/v1/subscriptions/{id}` — Get single subscription
-- `PUT /api/v1/subscriptions/{id}` — Update subscription details
+- `GET /api/v1/subscriptions/user/{userId}` — Get user subscriptions
+- `GET /api/v1/subscriptions/upcoming-renewals` — Renewals due within 7 days
+- `POST /api/v1/subscriptions` — Create new subscription
+- `PUT /api/v1/subscriptions/{id}` — Update subscription
+- `PUT /api/v1/subscriptions/{id}/cancel` — Cancel subscription
 - `DELETE /api/v1/subscriptions/{id}` — Delete subscription
-- `PUT /api/v1/subscriptions/{id}/cancel` — Mark subscription as cancelled
-
-### Users (`/api/v1/users`)
-- `GET /api/v1/users` — List all users
-- `GET /api/v1/users/{id}` — Get user profile by ID
-- `DELETE /api/v1/users/{id}` — Delete user profile
-
-### Workflows (`/api/v1/workflows`)
-- `POST /api/v1/workflows/subscription/reminder` — Trigger single subscription reminder check

@@ -35,3 +35,6 @@ build/
 .env
 .env.local
 .env.*.local
+
+### Agent Configurations ###
+.agents/

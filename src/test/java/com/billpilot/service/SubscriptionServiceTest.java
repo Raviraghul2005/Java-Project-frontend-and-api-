@@ -66,6 +66,7 @@ class SubscriptionServiceTest {
 
     @Test
     void testCreateSubscriptionCalculatesRenewalDate() {
+        LocalDate start = LocalDate.now();
         CreateSubscriptionRequest request = CreateSubscriptionRequest.builder()
                 .name("Spotify")
                 .price(11.99)
@@ -73,7 +74,7 @@ class SubscriptionServiceTest {
                 .frequency(Frequency.MONTHLY)
                 .category(Category.ENTERTAINMENT)
                 .paymentMethod("PayPal")
-                .startDate(LocalDate.of(2026, 9, 1))
+                .startDate(start)
                 .build();
 
         when(subscriptionRepository.save(any(Subscription.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -83,7 +84,7 @@ class SubscriptionServiceTest {
         assertNotNull(result);
         assertEquals("Spotify", result.getName());
         assertEquals("user-123", result.getUser());
-        assertEquals(LocalDate.of(2026, 10, 1), result.getRenewalDate());
+        assertEquals(start.plusDays(30), result.getRenewalDate());
         assertEquals(SubscriptionStatus.ACTIVE, result.getStatus());
         verify(subscriptionRepository).save(any(Subscription.class));
     }
