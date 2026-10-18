@@ -11,6 +11,7 @@ export function Navbar({ onOpenNewModal }: { onOpenNewModal: () => void }) {
 
   const navLinks = [
     { href: "/", label: "Dashboard" },
+    { href: "/scan", label: "Scan Statement" },
     { href: "/analytics", label: "Fatigue Audit" },
     { href: "/simulator", label: "Arbitrage Lab" },
     { href: "/catalog", label: "Catalog" },
