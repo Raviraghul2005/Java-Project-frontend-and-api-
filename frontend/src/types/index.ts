@@ -113,3 +113,29 @@ export interface PresetSubscription {
   paymentMethod: string;
   description: string;
 }
+
+export interface DetectedSubscription {
+  name: string;
+  merchantKey: string;
+  category: Category;
+  frequency: Frequency;
+  amount: number;
+  monthlyAmount: number;
+  occurrences: number;
+  firstSeen: string;
+  lastSeen: string;
+  nextExpected: string;
+  confidence: number;
+  knownMerchant: boolean;
+  previousAmount?: number | null;
+  alreadyTracked: boolean;
+  evidence: string;
+}
+
+export interface StatementAnalysis {
+  transactionsScanned: number;
+  detected: DetectedSubscription[];
+  untrackedCount: number;
+  detectedMonthlyTotal: number;
+  untrackedMonthlyTotal: number;
+}

@@ -1,12 +1,53 @@
 # 🧾 Bill Pilot — Subscription Intelligence & Fatigue Audit Engine
 
-A production-grade subscription intelligence platform built with **Java (LTS)**, **Spring Boot 3.4**, and **Next.js 16 (App Router)**.
+A subscription intelligence platform built with **Java (LTS)**, **Spring Boot 3.4**, and **Next.js 16 (App Router)**.
 
 ---
 
-## 🔬 Core System: Subscription Intelligence Engine
+## 👤 Who Is This For?
 
-Standard applications merely act as passive ledgers that record bills and send reminders. **Bill Pilot transforms passive tracking into an algorithmic auditing and fatigue prevention engine**:
+**Students and early-career professionals (roughly 18–28) who pay for 6–12 digital subscriptions out of a fixed monthly allowance or stipend.**
+
+- They start free trials and forget to cancel them.
+- They pay for several services in the same category at once (Netflix + Disney+ + Prime, or ChatGPT + Claude + Copilot).
+- Annual renewals surprise them.
+- Charges are scattered across cards and UPI apps, so nobody knows the real monthly total.
+
+**The problem:** these users do not just need a place to *record* subscriptions. They need to *discover* the ones they forgot about and decide which to cut, before the next charge lands.
+
+**What Bill Pilot does for them:** upload a bank statement and it finds the hidden recurring charges, scores how overloaded the stack is, and shows what cancelling or rotating would save.
+
+---
+
+## ⭐ Key Feature: Hidden Subscription Detector (Statement Scanner)
+
+Most trackers only work if you remember to type every subscription in. Bill Pilot works backwards from the money: upload a bank or card statement CSV (`/scan` page) and it finds the recurring charges itself.
+
+It uses **deterministic rules, no machine learning and no third-party API**, so every detection is explainable and the statement is never sent anywhere. The file is parsed in memory and never stored.
+
+**How detection works** (`com.billpilot.statement`):
+
+1. **Parse** the CSV. Columns are located by header name (date, description, amount or debit/credit), so different banks' layouts work. Date formats are auto-detected and money-in rows are discarded.
+2. **Normalize merchants.** `NETFLIX.COM 8007 CA`, `UPI-NETFLIX-123@ybl` and `POS DEBIT NETFLIX*MONTHLY` all collapse to one key. Known services are matched against a built-in catalog; unknown ones use their first meaningful words.
+3. **Group by merchant** and sort each group by date (several charges on the same day count once).
+4. **Classify the cadence** from the median gap between charges: weekly (7 ± 1 days), monthly (30 ± 3) or yearly (365 ± 7).
+5. **Check regularity.** At least 60% of gaps must match the cadence, so one missed or late payment is tolerated.
+6. **Check amount stability.** Unknown merchants must charge the same amount (within 5%) at least 3 times, which keeps coffee shops and grocery runs out. Known subscription services need only 2 charges and may vary up to 50%.
+7. **Score confidence (0–100)**:
+
+```text
+confidence = 100 × ( 0.35 × regularity + 0.25 × amount_stability + 0.20 × min(1, charges/4) + 0.20 × known_merchant )
+```
+
+Results below 50 are dropped. For each detection the app shows the evidence, the next expected charge date, and flags **price hikes** (latest charge differs from the previous one) and whether it is **already in your tracker**. One click adds it.
+
+A sample file is in `frontend/public/sample-statement.csv`.
+
+---
+
+## 🔬 Analytics: Subscription Intelligence Engine
+
+Once subscriptions are tracked, Bill Pilot audits them.
 
 ### 1. Subscription Fatigue Index (SFI) [Score: 0–100]
 A deterministic mathematical model evaluating the cognitive clutter, financial run-rate, and domain saturation of recurring commitments:
@@ -58,31 +99,36 @@ An interactive decision-support sandbox enabling users to simulate pausing redun
 ## 📁 Project Architecture
 
 ```
-d:/Java Project/
+bill-pilot/
 ├── pom.xml                                     # Spring Boot Maven POM
 ├── src/                                        # Backend source code
 │   ├── main/java/com/billpilot/
 │   │   ├── BillPilotApplication.java
 │   │   ├── config/                             # Mongo & Security Config
-│   │   ├── controller/                         # Auth, Subscriptions, Analytics
+│   │   ├── controller/                         # Auth, Subscriptions, Analytics, Statements
 │   │   │   ├── AnalyticsController.java        # /api/v1/analytics/audit
 │   │   │   ├── AuthController.java             # /api/v1/auth
+│   │   │   ├── StatementController.java        # /api/v1/statements/analyze
 │   │   │   └── SubscriptionController.java     # /api/v1/subscriptions
 │   │   ├── dto/                                # Request & Response DTOs
 │   │   ├── filter/                             # RateLimitFilter (Bucket4j)
 │   │   ├── model/                              # Subscription, User, Enums
 │   │   ├── repository/                         # Spring Data Repositories
 │   │   ├── security/                           # JwtAuthenticationFilter & JwtService
+│   │   ├── statement/                          # Statement scanner: StatementParser, MerchantNormalizer,
+│   │   │                                       #   MerchantCatalog, RecurringDetector
 │   │   └── service/
 │   │       ├── AnalyticsService.java           # SFI & Redundancy Engine
 │   │       ├── AuthService.java
+│   │       ├── StatementAnalysisService.java   # Upload -> parse -> detect -> match tracked
 │   │       ├── SubscriptionService.java
 │   │       └── ReminderSchedulerService.java
-│   └── test/                                   # 21/21 Passing Unit Tests
+│   └── test/                                   # JUnit tests (run: mvn test)
 └── frontend/                                   # Next.js 16 Application
     ├── src/
     │   ├── app/
     │   │   ├── page.tsx                        # Main Dashboard
+    │   │   ├── scan/page.tsx                   # Statement Scanner (hidden subscription detector)
     │   │   ├── analytics/page.tsx              # SFI & Redundancy Audit
     │   │   ├── simulator/page.tsx              # What-If Arbitrage Lab
     │   │   ├── catalog/page.tsx                # Verified Preset Directory
@@ -112,6 +158,8 @@ mvn test
 cd frontend
 npm run dev
 ```
+The frontend talks to `http://localhost:5500` by default. Set `NEXT_PUBLIC_API_URL` to point it elsewhere.
+
 Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ---
@@ -120,6 +168,9 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ### Analytics (`/api/v1/analytics`)
 - `GET /api/v1/analytics/audit` — Computes Subscription Fatigue Index (SFI), Redundancy Matrix, Vampire Drain projections, and 30-day renewal collisions.
+
+### Statements (`/api/v1/statements`)
+- `POST /api/v1/statements/analyze` — Multipart upload (`file`, `.csv`, max 2 MB). Returns detected recurring charges with confidence, next expected date, price-change and already-tracked flags. The file is not stored.
 
 ### Authentication (`/api/v1/auth`)
 - `POST /api/v1/auth/sign-up` — Register user & issue JWT

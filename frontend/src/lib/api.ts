@@ -2,10 +2,12 @@ import {
   Subscription,
   User,
   CreateSubscriptionInput,
-  AnalyticsData
+  AnalyticsData,
+  StatementAnalysis
 } from "@/types";
 
-const API_BASE = "http://localhost:5500/api/v1";
+const API_ROOT = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5500";
+const API_BASE = `${API_ROOT}/api/v1`;
 
 // Demo fallback data if backend is offline or unseeded
 export const SEED_SUBSCRIPTIONS: Subscription[] = [
@@ -122,7 +124,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const api = {
   checkHealth: async (): Promise<boolean> => {
     try {
-      const res = await fetch("http://localhost:5500/api", { method: "GET" });
+      const res = await fetch(`${API_ROOT}/api`, { method: "GET" });
       return res.ok;
     } catch {
       return false;
@@ -184,6 +186,22 @@ export const api = {
     await request<{ success: boolean }>(`/subscriptions/${id}`, {
       method: "DELETE"
     });
+  },
+
+  analyzeStatement: async (file: File): Promise<StatementAnalysis> => {
+    const form = new FormData();
+    form.append("file", file);
+    // No Content-Type here: the browser sets the multipart boundary itself.
+    const res = await fetch(`${API_BASE}/statements/analyze`, {
+      method: "POST",
+      headers: getAuthHeader(),
+      body: form
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(body?.message || body?.error || `HTTP error ${res.status}`);
+    }
+    return body.data as StatementAnalysis;
   },
 
   getAnalyticsAudit: async (): Promise<AnalyticsData> => {

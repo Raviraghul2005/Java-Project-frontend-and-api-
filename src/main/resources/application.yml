@@ -8,6 +8,10 @@ spring:
     mongodb:
       uri: ${DB_URI:mongodb://localhost:27017/bill-pilot}
       database: ${DB_NAME:test}
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 2MB
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
