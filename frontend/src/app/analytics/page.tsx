@@ -6,9 +6,10 @@ import { Navbar } from "@/components/Navbar";
 import { FatigueGauge } from "@/components/FatigueGauge";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { useApp } from "@/context/AppContext";
+import { formatMoney } from "@/lib/money";
 
 export default function AnalyticsPage() {
-  const { analytics } = useApp();
+  const { analytics, loadError, refreshAll } = useApp();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   if (!analytics) {
@@ -16,12 +17,29 @@ export default function AnalyticsPage() {
       <div className="flex-1 flex flex-col bg-[#09090b]">
         <Navbar onOpenNewModal={() => setIsModalOpen(true)} />
         <div className="max-w-7xl mx-auto px-4 py-20 text-center">
-          <div className="size-8 border-2 border-zinc-500 border-t-zinc-200 rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-zinc-400 text-xs font-medium">Computing subscription audit...</p>
+          {loadError ? (
+            <div role="alert" className="space-y-3">
+              <p className="text-rose-300 text-xs font-medium">{loadError}</p>
+              <button
+                type="button"
+                onClick={() => refreshAll()}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-100 transition-colors cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="size-8 border-2 border-zinc-500 border-t-zinc-200 rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-zinc-400 text-xs font-medium">Computing subscription audit...</p>
+            </>
+          )}
         </div>
       </div>
     );
   }
+
+  const money = (amount: number) => formatMoney(amount, analytics.currency);
 
   return (
     <div className="flex-1 flex flex-col bg-[#09090b]">
@@ -39,6 +57,12 @@ export default function AnalyticsPage() {
             <p className="text-sm text-zinc-400 mt-0.5">
               Deterministic heuristic model evaluating subscription clutter, functional overlap, and 5-year opportunity cost.
             </p>
+            {analytics.excludedSubscriptionCount > 0 && (
+              <p className="text-xs text-amber-400/90 mt-1">
+                All figures are in {analytics.currency}. {analytics.excludedSubscriptionCount} active subscription
+                {analytics.excludedSubscriptionCount === 1 ? "" : "s"} billed in {analytics.excludedCurrencies.join(", ")} {analytics.excludedSubscriptionCount === 1 ? "is" : "are"} not included.
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -63,13 +87,15 @@ export default function AnalyticsPage() {
           </div>
           <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-300 overflow-x-auto tabular">
             <code>
-              SFI = clamp(0, 100, [4.5 × N_active] + [12.0 × R_redundancy] + min(30, Spend_monthly / 15) + [6.0 × C_collisions])
+              SFI = clamp(5, 100, [4.5 × N_active] + [12.0 × R_redundancy] + min(30, Spend_monthly / 15) + min(18, 6.0 × C_collisions))
             </code>
           </div>
           <p className="text-xs text-zinc-400 leading-relaxed text-pretty">
             Rather than treating recurring expenses solely as an aggregate total, this engine applies penalty weights for
             domain saturation. Maintaining concurrent subscriptions in identical categories increases cognitive overhead
-            and recurring financial leakage with diminishing marginal returns.
+            and recurring financial leakage with diminishing marginal returns. N_active counts active plans, R_redundancy
+            counts extra services beyond the first in each category, and C_collisions counts days in the next 30 where
+            two or more plans (or $40+) renew together. With no active plans the score is 0.
           </p>
         </section>
 
@@ -81,7 +107,7 @@ export default function AnalyticsPage() {
                 Functional Redundancy Matrix
               </h2>
               <p className="text-xs text-zinc-400">
-                Overlapping services within identical utility domains competing for attention.
+                Multiple active services in the same category, competing for attention and budget.
               </p>
             </div>
             <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-300">
@@ -102,7 +128,7 @@ export default function AnalyticsPage() {
                         {group.title}
                       </span>
                       <span className="text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 tabular">
-                        Save +${group.potentialAnnualSavings}/yr
+                        Save +{money(group.potentialAnnualSavings)}/yr
                       </span>
                     </div>
 
@@ -123,8 +149,8 @@ export default function AnalyticsPage() {
                   </div>
 
                   <div className="pt-3 border-t border-zinc-800/60 flex items-center justify-between text-xs text-zinc-400 tabular">
-                    <span>Category outflow: ${group.monthlySpend.toFixed(2)}/mo</span>
-                    <span>Annualized: ${group.annualSpend.toFixed(2)}/yr</span>
+                    <span>Category outflow: {money(group.monthlySpend)}/mo</span>
+                    <span>Annualized: {money(group.annualSpend)}/yr</span>
                   </div>
                 </div>
               ))}
@@ -135,6 +161,48 @@ export default function AnalyticsPage() {
               <p className="text-xs text-zinc-500 mt-1">
                 All active subscriptions occupy unique service domains.
               </p>
+            </div>
+          )}
+        </section>
+
+        {/* 3b. Renewal Collision Timeline */}
+        <section className="space-y-3.5">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-100">
+              Renewal Collision Timeline
+            </h2>
+            <p className="text-xs text-zinc-400">
+              Renewals landing in the next 30 days. Days with two or more charges (or $40+) are flagged as collisions.
+            </p>
+          </div>
+
+          {analytics.collisionTimeline.length > 0 ? (
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {analytics.collisionTimeline.map((day) => (
+                <li
+                  key={day.date}
+                  className={`rounded-xl border p-4 space-y-1.5 ${
+                    day.collisionRisk
+                      ? "border-amber-500/30 bg-amber-500/5"
+                      : "border-zinc-800/80 bg-zinc-900/40"
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-zinc-200 tabular">{day.date}</span>
+                    <span className="text-zinc-300 font-medium tabular">{money(day.totalCost)}</span>
+                  </div>
+                  <div className="text-xs text-zinc-400">{day.serviceNames.join(", ")}</div>
+                  {day.collisionRisk && (
+                    <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                      Collision risk
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="p-8 rounded-xl bg-zinc-900/20 border border-zinc-800 text-center">
+              <p className="text-xs text-zinc-500">No renewals due in the next 30 days.</p>
             </div>
           )}
         </section>
@@ -154,7 +222,7 @@ export default function AnalyticsPage() {
             <div className="text-right">
               <span className="text-xs text-zinc-500 block">5-Yr Foregone Yield</span>
               <span className="text-sm font-semibold text-zinc-100 tabular">
-                ${analytics.total5YearOpportunityCost.toFixed(2)}
+                {money(analytics.total5YearOpportunityCost)}
               </span>
             </div>
           </div>
@@ -186,12 +254,12 @@ export default function AnalyticsPage() {
                           )}
                         </td>
                         <td className="py-3 px-4 text-zinc-400 capitalize">{item.category}</td>
-                        <td className="py-3 px-4 text-right text-zinc-300 font-medium">${item.monthlyCost.toFixed(2)}</td>
-                        <td className="py-3 px-4 text-right text-zinc-400">${item.oneYearSpend.toFixed(2)}</td>
-                        <td className="py-3 px-4 text-right text-zinc-400">${item.threeYearSpend.toFixed(2)}</td>
-                        <td className="py-3 px-4 text-right text-zinc-400">${item.fiveYearSpend.toFixed(2)}</td>
+                        <td className="py-3 px-4 text-right text-zinc-300 font-medium">{money(item.monthlyCost)}</td>
+                        <td className="py-3 px-4 text-right text-zinc-400">{money(item.oneYearSpend)}</td>
+                        <td className="py-3 px-4 text-right text-zinc-400">{money(item.threeYearSpend)}</td>
+                        <td className="py-3 px-4 text-right text-zinc-400">{money(item.fiveYearSpend)}</td>
                         <td className="py-3 px-4 text-right font-medium text-zinc-100">
-                          ${item.fiveYearOpportunityCost.toFixed(2)}
+                          {money(item.fiveYearOpportunityCost)}
                         </td>
                       </tr>
                     ))
@@ -232,7 +300,7 @@ export default function AnalyticsPage() {
 
                   <div className="flex justify-between items-center text-[11px] text-zinc-400 tabular">
                     <span>{cat.count} service{cat.count > 1 ? "s" : ""}</span>
-                    <span className="text-zinc-300 font-medium">${cat.monthlySpend.toFixed(2)}/mo</span>
+                    <span className="text-zinc-300 font-medium">{money(cat.monthlySpend)}/mo</span>
                   </div>
                 </div>
               ))}

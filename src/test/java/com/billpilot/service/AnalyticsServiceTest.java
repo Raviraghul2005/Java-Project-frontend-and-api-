@@ -106,6 +106,77 @@ class AnalyticsServiceTest {
         assertTrue(response.getTotal5YearOpportunityCost() > 0);
     }
 
+    private Subscription active(String id, String name, double price, Frequency frequency, Category category, String currency) {
+        return Subscription.builder().id(id).name(name).price(price).currency(currency).frequency(frequency)
+                .category(category).status(SubscriptionStatus.ACTIVE)
+                .renewalDate(LocalDate.now().plusDays(15)).user("user-123").build();
+    }
+
+    @Test
+    void currenciesAreNeverSummedTogether() {
+        Subscription usd1 = active("1", "Netflix", 15.0, Frequency.MONTHLY, Category.ENTERTAINMENT, "USD");
+        Subscription usd2 = active("2", "Claude", 20.0, Frequency.MONTHLY, Category.TECHNOLOGY, "USD");
+        Subscription inr = active("3", "Hotstar", 1499.0, Frequency.MONTHLY, Category.ENTERTAINMENT, "INR");
+        when(subscriptionRepository.findByUser("user-123")).thenReturn(List.of(usd1, usd2, inr));
+
+        AnalyticsResponse response = analyticsService.computeAnalyticsAudit(testUser);
+
+        assertEquals("USD", response.getCurrency());
+        assertEquals(35.0, response.getTotalMonthlySpend());
+        assertEquals(2, response.getActiveCount());
+        assertEquals(List.of("INR"), response.getExcludedCurrencies());
+        assertEquals(1, response.getExcludedSubscriptionCount());
+    }
+
+    @Test
+    void currencyTieGoesToUsdThenAlphabetical() {
+        Subscription usd = active("1", "Netflix", 15.0, Frequency.MONTHLY, Category.ENTERTAINMENT, "USD");
+        Subscription inr = active("2", "Hotstar", 1499.0, Frequency.MONTHLY, Category.ENTERTAINMENT, "INR");
+        when(subscriptionRepository.findByUser("user-123")).thenReturn(List.of(inr, usd));
+        assertEquals("USD", analyticsService.computeAnalyticsAudit(testUser).getCurrency());
+
+        Subscription eur = active("3", "Spotify", 10.0, Frequency.MONTHLY, Category.ENTERTAINMENT, "EUR");
+        Subscription gbp = active("4", "Disney", 8.0, Frequency.MONTHLY, Category.ENTERTAINMENT, "GBP");
+        when(subscriptionRepository.findByUser("user-123")).thenReturn(List.of(gbp, eur));
+        assertEquals("EUR", analyticsService.computeAnalyticsAudit(testUser).getCurrency());
+    }
+
+    @Test
+    void subscriptionWithoutCategoryDoesNotBreakTheAudit() {
+        Subscription legacy = active("1", "Legacy", 10.0, Frequency.MONTHLY, null, "USD");
+        when(subscriptionRepository.findByUser("user-123")).thenReturn(List.of(legacy));
+
+        AnalyticsResponse response = analyticsService.computeAnalyticsAudit(testUser);
+
+        assertEquals(1, response.getActiveCount());
+        assertEquals("other", response.getVampireProjections().get(0).getCategory());
+    }
+
+    @Test
+    void monthlyEquivalentsUseExactCalendarFactors() {
+        Subscription weekly = active("1", "Weekly", 12.0, Frequency.WEEKLY, Category.NEWS, "USD");
+        Subscription yearly = active("2", "Yearly", 120.0, Frequency.YEARLY, Category.OTHER, "USD");
+        when(subscriptionRepository.findByUser("user-123")).thenReturn(List.of(weekly, yearly));
+
+        AnalyticsResponse response = analyticsService.computeAnalyticsAudit(testUser);
+
+        // 12 * 52 / 12 = 52.00 per month for the weekly plan, plus 10.00 for the yearly one
+        assertEquals(62.0, response.getTotalMonthlySpend());
+    }
+
+    @Test
+    void pastRenewalDateIsRolledForwardSoTheSubscriptionStillCountsTowardsCollisions() {
+        Subscription stale = active("1", "Stale", 10.0, Frequency.MONTHLY, Category.OTHER, "USD");
+        stale.setStartDate(LocalDate.now().minusMonths(3));
+        stale.setRenewalDate(LocalDate.now().minusMonths(2));
+        when(subscriptionRepository.findByUser("user-123")).thenReturn(List.of(stale));
+
+        AnalyticsResponse response = analyticsService.computeAnalyticsAudit(testUser);
+
+        assertEquals(1, response.getCollisionTimeline().size());
+        assertFalse(response.getCollisionTimeline().get(0).getDate().isBefore(LocalDate.now()));
+    }
+
     @Test
     void testComputeAnalyticsAuditWithZeroSubscriptions() {
         when(subscriptionRepository.findByUser("user-123")).thenReturn(List.of());

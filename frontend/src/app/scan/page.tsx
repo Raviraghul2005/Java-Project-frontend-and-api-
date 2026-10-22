@@ -6,9 +6,12 @@ import { Navbar } from "@/components/Navbar";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { useApp } from "@/context/AppContext";
 import { api } from "@/lib/api";
+import { formatMoney } from "@/lib/money";
 import { DetectedSubscription, StatementAnalysis } from "@/types";
 
 const MAX_BYTES = 2 * 1024 * 1024;
+// A statement CSV carries no currency, so the user says which one it is in (used for display and when adding).
+const CURRENCIES = ["USD", "EUR", "GBP", "INR", "CAD", "AUD"];
 
 export default function ScanPage() {
   const { user, isBackendConnected, createSub, addToast } = useApp();
@@ -18,6 +21,8 @@ export default function ScanPage() {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<Set<string>>(new Set());
+  const [currency, setCurrency] = useState("USD");
+  const [adding, setAdding] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const canScan = Boolean(user) && isBackendConnected;
@@ -52,16 +57,19 @@ export default function ScanPage() {
   };
 
   const addToTracker = async (d: DetectedSubscription) => {
+    if (adding) return;
+    setAdding(d.merchantKey);
     const ok = await createSub({
       name: d.name,
       price: d.amount,
-      currency: "USD",
+      currency,
       frequency: d.frequency,
       category: d.category,
       paymentMethod: "From bank statement",
       startDate: d.firstSeen,
       renewalDate: d.nextExpected
     });
+    setAdding(null);
     if (ok) {
       setAdded((prev) => new Set(prev).add(d.merchantKey));
       // Re-run so the totals and "already tracked" flags reflect the new subscription.
@@ -105,39 +113,67 @@ export default function ScanPage() {
         )}
 
         <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-5 space-y-4">
-          <div
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".csv,text/csv"
+            aria-label="Choose a bank statement CSV file"
+            className="hidden"
+            onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+          />
+          <button
+            type="button"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
               pickFile(e.dataTransfer.files?.[0] ?? null);
             }}
             onClick={() => inputRef.current?.click()}
-            className="cursor-pointer rounded-lg border border-dashed border-zinc-700 hover:border-zinc-500 transition-colors p-8 text-center"
+            className="w-full cursor-pointer rounded-lg border border-dashed border-zinc-700 hover:border-zinc-500 focus-visible:border-zinc-400 focus-visible:outline-none transition-colors p-8 text-center"
           >
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-            />
-            <p className="text-sm text-zinc-200 font-medium">{file ? file.name : "Drop a .csv statement here or click to choose"}</p>
-            <p className="text-xs text-zinc-500 mt-1">
-              Needs date, description and amount (or debit) columns. Max 2 MB.{" "}
-              <a
-                href="/sample-statement.csv"
-                download
-                onClick={(e) => e.stopPropagation()}
-                className="underline underline-offset-2 hover:text-zinc-300"
-              >
-                Download a sample
-              </a>
-            </p>
+            <span className="block text-sm text-zinc-200 font-medium">
+              {file ? file.name : "Drop a .csv statement here or click to choose"}
+            </span>
+            <span className="block text-xs text-zinc-500 mt-1">
+              Needs date, description and amount (or debit) columns. Max 2 MB.
+            </span>
+          </button>
+          <p className="text-xs text-zinc-500">
+            <a
+              href="/sample-statement.csv"
+              download
+              className="underline underline-offset-2 hover:text-zinc-300"
+            >
+              Download a sample statement
+            </a>
+          </p>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="scan-currency" className="text-xs font-medium text-zinc-300">
+              Statement currency
+            </label>
+            <select
+              id="scan-currency"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs focus:outline-none focus:border-zinc-600"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
 
           <button
+            type="button"
             onClick={scan}
             disabled={!file || scanning || !canScan}
             className="px-4 py-2 rounded-lg text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
@@ -152,11 +188,11 @@ export default function ScanPage() {
               <p className="text-lg font-semibold text-zinc-100">
                 {result.detected.length === 0
                   ? "No recurring charges found"
-                  : `Found ${result.detected.length} recurring ${result.detected.length === 1 ? "charge" : "charges"} · $${result.detectedMonthlyTotal.toFixed(2)}/month`}
+                  : `Found ${result.detected.length} recurring ${result.detected.length === 1 ? "charge" : "charges"} · ${formatMoney(result.detectedMonthlyTotal, currency)}/month`}
               </p>
               <p className="text-sm text-zinc-400 mt-1">
                 {result.untrackedCount > 0
-                  ? `${result.untrackedCount} ${result.untrackedCount === 1 ? "isn't" : "aren't"} in your tracker yet ($${result.untrackedMonthlyTotal.toFixed(2)}/month, $${(result.untrackedMonthlyTotal * 12).toFixed(2)}/year).`
+                  ? `${result.untrackedCount} ${result.untrackedCount === 1 ? "isn't" : "aren't"} in your tracker yet (${formatMoney(result.untrackedMonthlyTotal, currency)}/month, ${formatMoney(result.untrackedMonthlyTotal * 12, currency)}/year).`
                   : result.detected.length > 0
                     ? "Everything detected is already in your tracker."
                     : "Scanned " + result.transactionsScanned + " transactions. Recurring charges need at least two matching payments on a regular schedule."}
@@ -184,22 +220,24 @@ export default function ScanPage() {
                       )}
                       {d.previousAmount != null && (
                         <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300">
-                          price changed from ${d.previousAmount.toFixed(2)}
+                          price changed from {formatMoney(d.previousAmount, currency)}
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-zinc-400 mt-1">
-                      ${d.amount.toFixed(2)} · next expected {d.nextExpected} · {d.evidence}
+                      {formatMoney(d.amount, currency)} · next expected {d.nextExpected} · {d.evidence}
                     </p>
                   </div>
 
                   {!d.alreadyTracked && (
                     <button
+                      type="button"
+                      aria-label={`Add ${d.name} to tracker`}
                       onClick={() => addToTracker(d)}
-                      disabled={added.has(d.merchantKey)}
+                      disabled={added.has(d.merchantKey) || adding !== null}
                       className="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 disabled:opacity-40 transition-colors cursor-pointer"
                     >
-                      {added.has(d.merchantKey) ? "Added" : "Add to tracker"}
+                      {added.has(d.merchantKey) ? "Added" : adding === d.merchantKey ? "Adding…" : "Add to tracker"}
                     </button>
                   )}
                 </li>

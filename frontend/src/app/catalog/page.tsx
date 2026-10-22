@@ -6,14 +6,21 @@ import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { PRESET_SUBSCRIPTIONS } from "@/lib/catalog";
 import { useApp } from "@/context/AppContext";
 import { PresetSubscription } from "@/types";
+import { todayLocal } from "@/lib/dates";
+import { formatMoney } from "@/lib/money";
 
 export default function CatalogPage() {
-  const { createSub, addToast } = useApp();
+  const { createSub } = useApp();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
+  // Names currently being added: stops a double click from creating the same subscription twice
+  const [adding, setAdding] = useState<Set<string>>(new Set());
 
-  const categories = ["all", "technology", "entertainment", "lifestyle", "news"];
+  const categories = useMemo(
+    () => ["all", ...Array.from(new Set(PRESET_SUBSCRIPTIONS.map((p) => p.category)))],
+    []
+  );
 
   const filteredPresets = useMemo(() => {
     return PRESET_SUBSCRIPTIONS.filter((preset) => {
@@ -28,7 +35,21 @@ export default function CatalogPage() {
   }, [selectedCategory, search]);
 
   const handleDeployPreset = async (preset: PresetSubscription) => {
-    const today = new Date().toISOString().split("T")[0];
+    if (adding.has(preset.name)) return;
+    setAdding((prev) => new Set(prev).add(preset.name));
+    try {
+      await addPreset(preset);
+    } finally {
+      setAdding((prev) => {
+        const next = new Set(prev);
+        next.delete(preset.name);
+        return next;
+      });
+    }
+  };
+
+  const addPreset = async (preset: PresetSubscription) => {
+    const today = todayLocal();
     await createSub({
       name: preset.name,
       price: preset.price,
@@ -61,6 +82,8 @@ export default function CatalogPage() {
             {categories.map((cat) => (
               <button
                 key={cat}
+                type="button"
+                aria-pressed={selectedCategory === cat}
                 onClick={() => setSelectedCategory(cat)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors cursor-pointer ${
                   selectedCategory === cat
@@ -76,6 +99,7 @@ export default function CatalogPage() {
           <div className="w-full sm:w-64">
             <input
               type="text"
+              aria-label="Search catalog"
               placeholder="Search catalog..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -98,7 +122,7 @@ export default function CatalogPage() {
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={preset.logo}
-                        alt={preset.name}
+                        alt=""
                         className="size-full object-contain"
                         onError={(e) => {
                           e.currentTarget.style.display = "none";
@@ -117,7 +141,7 @@ export default function CatalogPage() {
 
                   <div className="text-right">
                     <div className="text-base font-semibold text-zinc-100 tabular">
-                      ${preset.price.toFixed(2)}
+                      {formatMoney(preset.price, preset.currency)}
                     </div>
                     <div className="text-xs text-zinc-400">
                       /{preset.frequency}
@@ -136,10 +160,12 @@ export default function CatalogPage() {
                 </span>
 
                 <button
+                  type="button"
+                  disabled={adding.has(preset.name)}
                   onClick={() => handleDeployPreset(preset)}
-                  className="px-3 py-1 rounded-md text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors cursor-pointer"
+                  className="px-3 py-1 rounded-md text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  + Add to board
+                  {adding.has(preset.name) ? "Adding…" : "+ Add to board"}
                 </button>
               </div>
             </div>

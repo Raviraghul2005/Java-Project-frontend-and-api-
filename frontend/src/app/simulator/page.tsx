@@ -4,6 +4,11 @@ import React, { useState, useMemo } from "react";
 import { Navbar } from "@/components/Navbar";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { useApp } from "@/context/AppContext";
+import { daysUntil } from "@/lib/dates";
+import { formatMoney, primaryCurrency, toMonthly } from "@/lib/money";
+
+const ANNUAL_PLAN_DISCOUNT = 0.18; // assumed saving when switching a monthly plan to annual billing
+const OPPORTUNITY_FACTOR_5YR = 71.5929; // FV of 60 monthly deposits at 7% APR
 
 export default function SimulatorPage() {
   const { subscriptions } = useApp();
@@ -15,9 +20,26 @@ export default function SimulatorPage() {
   // Annualized subscriptions in simulation
   const [annualizedIds, setAnnualizedIds] = useState<Set<string>>(new Set());
 
+  // Prices in different currencies can't be added together, so the simulation covers the primary currency.
+  const currency = useMemo(
+    () => primaryCurrency(subscriptions.filter((s) => s.status === "active")),
+    [subscriptions]
+  );
+
   const activeSubs = useMemo(() => {
-    return subscriptions.filter((s) => s.status === "active");
-  }, [subscriptions]);
+    return subscriptions.filter(
+      (s) => s.status === "active" && (s.currency || "USD").toUpperCase() === currency
+    );
+  }, [subscriptions, currency]);
+
+  const excludedCount = useMemo(
+    () => subscriptions.filter((s) => s.status === "active").length - activeSubs.length,
+    [subscriptions, activeSubs]
+  );
+
+  // Only count simulation choices that still refer to a subscription on the board.
+  const pausedCount = activeSubs.filter((s) => pausedIds.has(s.id)).length;
+  const annualizedCount = activeSubs.filter((s) => annualizedIds.has(s.id)).length;
 
   const togglePause = (id: string) => {
     setPausedIds((prev) => {
@@ -35,14 +57,6 @@ export default function SimulatorPage() {
       else next.add(id);
       return next;
     });
-  };
-
-  const toMonthly = (price: number, freq: string): number => {
-    if (!price) return 0;
-    if (freq === "yearly") return price / 12;
-    if (freq === "weekly") return price * 4.33;
-    if (freq === "daily") return price * 30;
-    return price;
   };
 
   // Base metrics
@@ -64,7 +78,7 @@ export default function SimulatorPage() {
         let m = toMonthly(s.price, s.frequency);
 
         if (annualizedIds.has(s.id) && s.frequency !== "yearly") {
-          m = m * 0.82; // 18% annual billing discount
+          m = m * (1 - ANNUAL_PLAN_DISCOUNT);
         }
 
         simMonthly += m;
@@ -79,10 +93,30 @@ export default function SimulatorPage() {
 
     const monthlySaved = Math.max(0, baseMonthly - simMonthly);
     const annualSaved = monthlySaved * 12;
-    const fiveYearRecovery = monthlySaved * 71.59; // 7% compound growth
+    const fiveYearRecovery = monthlySaved * OPPORTUNITY_FACTOR_5YR;
 
-    const rawScore = retainedCount * 4.5 + Math.min(30, simMonthly / 15) + redundantCount * 12;
-    const simSFI = retainedCount === 0 ? 0 : Math.min(100, Math.max(8, Math.round(rawScore)));
+    // Renewal collisions in the next 30 days among the retained plans (same rule as the server's audit).
+    const byDate = new Map<string, { count: number; total: number }>();
+    activeSubs.forEach((s) => {
+      if (pausedIds.has(s.id) || !s.renewalDate) return;
+      const days = daysUntil(s.renewalDate);
+      if (days === null || days < 0 || days > 30) return;
+      const entry = byDate.get(s.renewalDate) ?? { count: 0, total: 0 };
+      entry.count++;
+      entry.total += s.price;
+      byDate.set(s.renewalDate, entry);
+    });
+    let collisionDays = 0;
+    byDate.forEach((e) => {
+      if (e.count >= 2 || e.total >= 40) collisionDays++;
+    });
+
+    const rawScore =
+      retainedCount * 4.5 +
+      Math.min(30, simMonthly / 15) +
+      redundantCount * 12 +
+      Math.min(18, collisionDays * 6);
+    const simSFI = retainedCount === 0 ? 0 : Math.min(100, Math.max(5, Math.round(rawScore)));
 
     return {
       simMonthly: Number(simMonthly.toFixed(2)),
@@ -134,18 +168,26 @@ export default function SimulatorPage() {
               Arbitrage Simulator
             </h1>
             <p className="text-sm text-zinc-400 mt-0.5">
-              Simulate pruning redundant domain commitments and converting monthly plans to discounted annual cycles.
+              Simulate pruning redundant domain commitments and converting monthly plans to discounted annual cycles
+              (assumes an {Math.round(ANNUAL_PLAN_DISCOUNT * 100)}% annual-plan discount).
             </p>
+            {excludedCount > 0 && (
+              <p className="text-xs text-amber-400/90 mt-1">
+                Showing {currency} plans only; {excludedCount} active plan{excludedCount === 1 ? "" : "s"} in other currencies {excludedCount === 1 ? "is" : "are"} excluded.
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={applyOptimalArbitrage}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-100 text-zinc-950 hover:bg-white transition-colors cursor-pointer"
             >
               Auto-Optimize Stack
             </button>
             <button
+              type="button"
               onClick={resetSimulation}
               className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-900 border border-zinc-800 transition-colors cursor-pointer"
             >
@@ -159,17 +201,17 @@ export default function SimulatorPage() {
           <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4.5">
             <span className="text-xs font-medium text-zinc-400 block">Simulated Monthly Spend</span>
             <div className="text-2xl font-semibold text-zinc-100 mt-1 tabular">
-              ${simulated.simMonthly}
+              {formatMoney(simulated.simMonthly, currency)}
             </div>
             <div className="text-xs text-zinc-500 mt-1 tabular">
-              Base: ${baseMonthly.toFixed(2)}/mo
+              Base: {formatMoney(baseMonthly, currency)}/mo
             </div>
           </div>
 
           <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4.5">
             <span className="text-xs font-medium text-zinc-400 block">Annual Cash Recovery</span>
             <div className="text-2xl font-semibold text-emerald-400 mt-1 tabular">
-              +${simulated.annualSaved}
+              +{formatMoney(simulated.annualSaved, currency)}
             </div>
             <div className="text-xs text-zinc-500 mt-1">
               Recaptured discretionary capital
@@ -179,7 +221,7 @@ export default function SimulatorPage() {
           <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4.5">
             <span className="text-xs font-medium text-zinc-400 block">5-Yr Compounded Yield (7%)</span>
             <div className="text-2xl font-semibold text-zinc-100 mt-1 tabular">
-              +${simulated.fiveYearRecovery}
+              +{formatMoney(simulated.fiveYearRecovery, currency)}
             </div>
             <div className="text-xs text-zinc-500 mt-1">
               If invested in standard index yield
@@ -202,7 +244,7 @@ export default function SimulatorPage() {
         <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 overflow-hidden">
           <div className="px-5 py-3 border-b border-zinc-800/80 bg-zinc-950/60 flex items-center justify-between text-xs text-zinc-400 font-medium">
             <span>Service Controls</span>
-            <span>{pausedIds.size} Paused • {annualizedIds.size} Annualized</span>
+            <span>{pausedCount} Paused • {annualizedCount} Annualized</span>
           </div>
 
           <div className="divide-y divide-zinc-800/60">
@@ -220,6 +262,9 @@ export default function SimulatorPage() {
                   >
                     <div className="flex items-center gap-3">
                       <button
+                        type="button"
+                        aria-pressed={isPaused}
+                        aria-label={`${isPaused ? "Resume" : "Pause"} ${sub.name} in simulation`}
                         onClick={() => togglePause(sub.id)}
                         className={`size-6 rounded-md border flex items-center justify-center text-xs font-medium transition-colors cursor-pointer ${
                           isPaused
@@ -228,7 +273,7 @@ export default function SimulatorPage() {
                         }`}
                         title={isPaused ? "Resume in simulation" : "Pause in simulation"}
                       >
-                        {isPaused ? "✕" : "✓"}
+                        <span aria-hidden="true">{isPaused ? "✕" : "✓"}</span>
                       </button>
 
                       <div>
@@ -244,7 +289,7 @@ export default function SimulatorPage() {
                           )}
                         </div>
                         <div className="text-xs text-zinc-500 tabular mt-0.5">
-                          Current: ${sub.price.toFixed(2)}/{sub.frequency}
+                          Current: {formatMoney(sub.price, currency)}/{sub.frequency}
                         </div>
                       </div>
                     </div>
@@ -252,6 +297,8 @@ export default function SimulatorPage() {
                     <div className="flex items-center gap-3 self-end sm:self-center">
                       {!isPaused && sub.frequency !== "yearly" && (
                         <button
+                          type="button"
+                          aria-pressed={isAnnual}
                           onClick={() => toggleAnnualized(sub.id)}
                           className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer ${
                             isAnnual
@@ -259,7 +306,7 @@ export default function SimulatorPage() {
                               : "bg-zinc-800/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
                           }`}
                         >
-                          {isAnnual ? "Annualized (-18%)" : "Annual plan"}
+                          {isAnnual ? `Annualized (-${Math.round(ANNUAL_PLAN_DISCOUNT * 100)}%)` : "Annual plan"}
                         </button>
                       )}
                       {!isPaused && sub.frequency === "yearly" && (
@@ -271,10 +318,10 @@ export default function SimulatorPage() {
                       <div className="text-right min-w-[70px]">
                         <span className="text-xs font-medium text-zinc-200 tabular">
                           {isPaused
-                            ? "$0.00/mo"
+                            ? `${formatMoney(0, currency)}/mo`
                             : isAnnual
-                            ? `$${(toMonthly(sub.price, sub.frequency) * 0.82).toFixed(2)}/mo`
-                            : `$${toMonthly(sub.price, sub.frequency).toFixed(2)}/mo`}
+                            ? `${formatMoney(toMonthly(sub.price, sub.frequency) * (1 - ANNUAL_PLAN_DISCOUNT), currency)}/mo`
+                            : `${formatMoney(toMonthly(sub.price, sub.frequency), currency)}/mo`}
                         </span>
                       </div>
                     </div>

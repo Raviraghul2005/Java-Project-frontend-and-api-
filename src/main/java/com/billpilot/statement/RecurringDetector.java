@@ -157,8 +157,8 @@ public class RecurringDetector {
 
     static double toMonthly(double amount, Frequency f) {
         return switch (f) {
-            case DAILY -> amount * 30.0;
-            case WEEKLY -> amount * 4.33;
+            case DAILY -> amount * 365.0 / 12.0;
+            case WEEKLY -> amount * 52.0 / 12.0;
             case MONTHLY -> amount;
             case YEARLY -> amount / 12.0;
         };

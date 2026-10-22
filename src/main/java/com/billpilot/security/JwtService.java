@@ -13,21 +13,30 @@ import java.util.Date;
 @Service
 public class JwtService {
 
+    static final int MIN_SECRET_BYTES = 32;
+    static final String ISSUER = "bill-pilot";
+
     private final SecretKey secretKey;
     private final long expirationMs;
 
+    /**
+     * The secret is used as raw UTF-8 bytes and must be at least 32 bytes (256 bits) long.
+     * There is intentionally no default: a missing or short secret fails startup rather than
+     * silently falling back to a key that anyone with the source code could use to forge tokens.
+     */
     public JwtService(
-            @Value("${app.jwt.secret:dGhpcy1pcy1hLXZlcnktc2VjdXJlLWFuZC1sb25nLWp3dC1zZWNyZXQta2V5LWZvci1iaWxsLXBpbG90}") String secret,
+            @Value("${app.jwt.secret:}") String secret,
             @Value("${app.jwt.expiration-ms:86400000}") long expirationMs) {
-        // Ensure key is at least 256 bits (32 bytes) for HMAC-SHA256
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        if (keyBytes.length < 32) {
-            byte[] padded = new byte[32];
-            System.arraycopy(keyBytes, 0, padded, 0, keyBytes.length);
-            this.secretKey = Keys.hmacShaKeyFor(padded);
-        } else {
-            this.secretKey = Keys.hmacShaKeyFor(keyBytes);
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("JWT_SECRET is not configured. Set a random value of at least "
+                    + MIN_SECRET_BYTES + " characters.");
         }
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException("JWT_SECRET is too short (" + keyBytes.length
+                    + " bytes). Use a random value of at least " + MIN_SECRET_BYTES + " characters.");
+        }
+        this.secretKey = Keys.hmacShaKeyFor(keyBytes);
         this.expirationMs = expirationMs;
     }
 
@@ -36,6 +45,7 @@ public class JwtService {
         Date expiryDate = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
+                .issuer(ISSUER)
                 .claim("userId", userId)
                 .subject(userId)
                 .issuedAt(now)
@@ -56,7 +66,7 @@ public class JwtService {
     public boolean validateToken(String token) {
         try {
             Claims claims = extractAllClaims(token);
-            return !claims.getExpiration().before(new Date());
+            return claims.getExpiration() != null && !claims.getExpiration().before(new Date());
         } catch (Exception e) {
             return false;
         }
@@ -65,6 +75,7 @@ public class JwtService {
     private Claims extractAllClaims(String token) {
         return Jwts.parser()
                 .verifyWith(secretKey)
+                .requireIssuer(ISSUER)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();

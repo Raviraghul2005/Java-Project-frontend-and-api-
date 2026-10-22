@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +38,7 @@ public class SubscriptionService {
                 .build();
 
         subscription.calculateRenewalDateIfMissing();
+        subscription.rollRenewalDateForward(LocalDate.now());
 
         return subscriptionRepository.save(subscription);
     }
@@ -53,7 +55,7 @@ public class SubscriptionService {
         Subscription subscription = subscriptionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Subscription not found"));
 
-        if (!subscription.getUser().equals(authenticatedUser.getId())) {
+        if (!Objects.equals(subscription.getUser(), authenticatedUser.getId())) {
             throw new ForbiddenException("You are not authorized to view this subscription");
         }
 
@@ -78,6 +80,7 @@ public class SubscriptionService {
             subscription.setRenewalDate(null);
             subscription.calculateRenewalDateIfMissing();
         }
+        subscription.rollRenewalDateForward(LocalDate.now());
 
         return subscriptionRepository.save(subscription);
     }
@@ -97,7 +100,11 @@ public class SubscriptionService {
         LocalDate today = LocalDate.now();
         LocalDate nextWeek = today.plusDays(7);
 
-        return subscriptionRepository.findByUser(authenticatedUser.getId()).stream()
+        List<Subscription> userSubscriptions = subscriptionRepository.findByUser(authenticatedUser.getId());
+        // In-memory only: the daily job persists roll-forwards, this keeps results correct between runs.
+        userSubscriptions.forEach(sub -> sub.rollRenewalDateForward(today));
+
+        return userSubscriptions.stream()
                 .filter(sub -> sub.getStatus() == SubscriptionStatus.ACTIVE)
                 .filter(sub -> sub.getRenewalDate() != null)
                 .filter(sub -> !sub.getRenewalDate().isBefore(today) && !sub.getRenewalDate().isAfter(nextWeek))

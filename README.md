@@ -1,6 +1,6 @@
 # 🧾 Bill Pilot — Subscription Intelligence & Fatigue Audit Engine
 
-A subscription intelligence platform built with **Java (LTS)**, **Spring Boot 3.4**, and **Next.js 16 (App Router)**.
+A subscription intelligence platform built with **Java (LTS)**, **Spring Boot 3.5**, and **Next.js 16 (App Router)**.
 
 ---
 
@@ -53,13 +53,20 @@ Once subscriptions are tracked, Bill Pilot audits them.
 A deterministic mathematical model evaluating the cognitive clutter, financial run-rate, and domain saturation of recurring commitments:
 
 ```text
-SFI = clamp(0, 100, [4.5 × N_active] + [12.0 × R_redundancy] + min(30, Spend_monthly / 15) + [6.0 × C_collisions])
+SFI = clamp(5, 100, [4.5 × N_active] + [12.0 × R_redundancy] + min(30, Spend_monthly / 15) + min(18, 6.0 × C_collisions))
 ```
+
+- `N_active` = active subscriptions, `R_redundancy` = extra services beyond the first in each category,
+  `C_collisions` = days in the next 30 where two or more plans (or $40+) renew together.
+- With no active subscriptions the score is 0; otherwise it never drops below 5.
+- All money is in the user's **primary currency** (the one used by most active plans, USD on a tie). Plans billed in other
+  currencies are excluded and reported separately instead of being added together.
+- Monthly equivalents use exact ratios: weekly × 52/12, daily × 365/12, yearly ÷ 12.
 
 - **OPTIMAL (0–30)**: Lean, non-overlapping stack with minimal mental load.
 - **MODERATE (31–60)**: Controlled recurring footprint with isolated minor clusters.
 - **ELEVATED (61–80)**: Emerging fatigue; heavy functional duplication in core categories.
-- **CRITICAL BURNOUT (81–100)**: Severe subscription saturation with compounding wealth leakage.
+- **BURNOUT (81–100)**: Severe subscription saturation with compounding wealth leakage.
 
 ### 2. Functional Redundancy Matrix (Overlap Detection)
 Isolates multiple active services competing within the exact same utility domain:
@@ -85,12 +92,12 @@ An interactive decision-support sandbox enabling users to simulate pausing redun
 | Layer | Technology | Details |
 | :--- | :--- | :--- |
 | **Backend Language** | Java SE (LTS) | JDK 21+ |
-| **Backend Framework** | Spring Boot | 3.4.3 |
+| **Backend Framework** | Spring Boot | 3.5.16 |
 | **Build Tool** | Apache Maven | 3.9+ |
 | **Database** | MongoDB | Spring Data MongoDB |
-| **Rate Limiter** | Bucket4j | 8.10.1 (100 capacity, 20 refill / 10s) |
+| **Rate Limiter** | Bucket4j + Caffeine | 8.10.1 (per IP: 100 capacity / 20 refill per 10s; sign-in & sign-up: 10 capacity / 5 refill per 60s) |
 | **Security & Auth** | Spring Security + JJWT | 0.12.6 (Stateless HMAC-SHA256) |
-| **Email Scheduler** | Spring Mail + `@Scheduled` | 3.4.3 (Gmail SMTP, MIME HTML) |
+| **Email Scheduler** | Spring Mail + `@Scheduled` | 3.5.16 (Gmail SMTP, MIME HTML) |
 | **Frontend Framework** | Next.js | 16.4.0 (Turbopack, App Router) |
 | **Frontend UI** | React 19 + Tailwind CSS | Dark Obsidian Theme |
 
@@ -144,11 +151,24 @@ bill-pilot/
 
 ## 🚀 Running the Project
 
+### 0. Configure (`.env` in the project root, see `.env.example`)
+
+| Variable | Required | Purpose |
+| :--- | :--- | :--- |
+| `DB_URI` | yes | MongoDB connection string. `DB_NAME` selects the database (default `test`). |
+| `JWT_SECRET` | **yes** | Random string of **at least 32 characters**. The server refuses to start without it (there is no default). Generate one with `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. |
+| `CORS_ALLOWED_ORIGINS` | no | Comma-separated browser origins allowed to call the API (default `http://localhost:3000`). |
+| `WORKFLOW_TOKEN` | no | Shared secret for `POST /api/v1/workflows/**` (sent as `X-Workflow-Token`). The endpoint is disabled while empty. |
+| `EMAIL_USER`, `EMAIL_PASSWORD` | for email | Gmail SMTP credentials for renewal reminders. |
+| `RATE_LIMIT_*` | no | Rate limiter tuning. Set `RATE_LIMIT_TRUST_FORWARDED_FOR=true` only behind a reverse proxy that overwrites `X-Forwarded-For`. |
+
+Never commit `.env`. If a secret is ever exposed, rotate it.
+
 ### 1. Run Spring Boot Backend (Port 5500)
 ```bash
 mvn spring-boot:run
 ```
-Run all automated unit tests:
+Run all automated backend tests (unit tests plus HTTP-level security tests):
 ```bash
 mvn test
 ```
@@ -162,6 +182,38 @@ The frontend talks to `http://localhost:5500` by default. Set `NEXT_PUBLIC_API_U
 
 Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
+### 3. Frontend checks and tests
+```bash
+cd frontend
+npm run typecheck     # tsc --noEmit
+npm run lint
+npm test              # Vitest unit tests (dates, money, CSV export, import validation, session handling)
+```
+The date logic is timezone-sensitive; run the unit tests under other zones too, e.g. `TZ=America/Los_Angeles npm test`.
+
+### 4. End-to-end tests (use a separate database!)
+The end-to-end suites create and delete real users and data, so run them against an **isolated** database, never your real one:
+```bash
+# terminal 1: backend on its own database
+DB_NAME=billpilot_e2e PORT=5501 CORS_ALLOWED_ORIGINS=http://localhost:3001 java -jar target/bill-pilot-1.0.0.jar
+# terminal 2: frontend pointed at it
+cd frontend && NEXT_PUBLIC_API_URL=http://localhost:5501 npx next dev -p 3001
+# terminal 3
+cd frontend && npm run e2e:api   # HTTP-level checks (no browser)
+cd frontend && npm run e2e       # browser checks (Playwright; uses Chromium, Edge or Chrome)
+```
+Sign-in and sign-up are rate limited, so wait about a minute between runs.
+
+### Behaviour worth knowing
+- **Renewals roll forward.** An active subscription keeps renewing: once its renewal date is more than a day overdue it moves
+  to the next billing date (calendar months/years, billing day preserved). It is only expired if you mark it so.
+- **Users can only see and delete their own account.** There is no endpoint that lists other users.
+- **The server is the only source of truth.** Importing a JSON backup or loading demo data creates real subscriptions in your
+  account; there is no offline/demo login mode.
+- **Known limits:** the session token is kept in `localStorage` (a Content-Security-Policy is applied in production builds to
+  limit XSS risk); the server has no per-user timezone, so renewal dates are interpreted in the server's timezone with a
+  one-day grace; there is no per-account lockout beyond the per-IP rate limits.
+
 ---
 
 ## 📡 API Reference
@@ -174,8 +226,15 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ### Authentication (`/api/v1/auth`)
 - `POST /api/v1/auth/sign-up` — Register user & issue JWT
-- `POST /api/v1/auth/sign-in` — Authenticate user
-- `POST /api/v1/auth/sign-out` — Invalidate session
+- `POST /api/v1/auth/sign-in` — Authenticate user (same `401` for an unknown email and a wrong password)
+- `POST /api/v1/auth/sign-out` — Acknowledges sign-out; tokens are stateless, so the client discards its token
+
+### Users (`/api/v1/users`) — own account only
+- `GET /api/v1/users/me` — Current user
+- `GET /api/v1/users/{id}` / `DELETE /api/v1/users/{id}` — `403` unless `{id}` is you. Deleting also removes your subscriptions.
+
+### Workflows (`/api/v1/workflows`)
+- `POST /api/v1/workflows/subscription/reminder` — Evaluate/send one reminder. Requires the `X-Workflow-Token` header.
 
 ### Subscriptions (`/api/v1/subscriptions`)
 - `GET /api/v1/subscriptions/user/{userId}` — Get user subscriptions

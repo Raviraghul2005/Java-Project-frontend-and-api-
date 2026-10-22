@@ -136,14 +136,46 @@ public class StatementParser {
         boolean negative = s.startsWith("-") || (s.startsWith("(") && s.endsWith(")")) || s.toLowerCase().endsWith("dr");
         s = s.replaceAll("[^0-9.,]", "");
         if (s.isEmpty()) return null;
-        // Commas are thousands separators in every layout we support.
-        s = s.replace(",", "");
+        s = normalizeSeparators(s);
         try {
             double v = Double.parseDouble(s);
             return negative ? -v : v;
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * Rewrites a digits-and-separators string into plain "1234.56" form. Statements come in both
+     * "1,234.56" (comma = thousands) and "1.234,56" / "9,99" (comma = decimal) layouts:
+     * <ul>
+     *   <li>when both separators appear, the one that comes last is the decimal point;</li>
+     *   <li>a lone comma followed by one or two digits is a decimal comma ("9,99");</li>
+     *   <li>any other comma grouping ("1,234", "1,23,456") is thousands;</li>
+     *   <li>several dots ("1.234.567") are thousands separators.</li>
+     * </ul>
+     */
+    static String normalizeSeparators(String s) {
+        int lastDot = s.lastIndexOf('.');
+        int lastComma = s.lastIndexOf(',');
+
+        if (lastDot >= 0 && lastComma >= 0) {
+            return lastComma > lastDot
+                    ? s.replace(".", "").replace(',', '.')
+                    : s.replace(",", "");
+        }
+        if (lastComma >= 0) {
+            boolean singleComma = s.indexOf(',') == lastComma;
+            int digitsAfter = s.length() - lastComma - 1;
+            if (singleComma && digitsAfter >= 1 && digitsAfter <= 2) {
+                return s.replace(',', '.');
+            }
+            return s.replace(",", "");
+        }
+        if (lastDot >= 0 && s.indexOf('.') != lastDot) {
+            return s.replace(".", "");
+        }
+        return s;
     }
 
     private static DateTimeFormatter pickDateFormat(List<Row> rows) {

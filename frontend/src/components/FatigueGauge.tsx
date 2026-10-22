@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { formatMoney } from "@/lib/money";
 import { AnalyticsData } from "@/types";
 
 interface FatigueGaugeProps {
@@ -80,13 +81,13 @@ export function FatigueGauge({ analytics }: FatigueGaugeProps) {
 
           <div className="p-3 rounded-lg bg-zinc-950/60 border border-zinc-800/60 min-w-[110px]">
             <span className="text-[11px] text-zinc-400 block">Monthly Run Rate</span>
-            <span className="text-base font-semibold text-zinc-100 tabular">${analytics.totalMonthlySpend}</span>
+            <span className="text-base font-semibold text-zinc-100 tabular">{formatMoney(analytics.totalMonthlySpend, analytics.currency)}</span>
           </div>
 
           <div className="p-3 rounded-lg bg-zinc-950/60 border border-zinc-800/60 min-w-[110px]">
             <span className="text-[11px] text-zinc-400 block">Annual Savings</span>
             <span className="text-base font-semibold text-emerald-400 tabular">
-              +${analytics.potentialAnnualSavings}
+              +{formatMoney(analytics.potentialAnnualSavings, analytics.currency)}
             </span>
           </div>
         </div>

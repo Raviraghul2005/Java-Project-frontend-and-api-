@@ -1,17 +1,22 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { SubscriptionCard } from "@/components/SubscriptionCard";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { useApp } from "@/context/AppContext";
 import { Subscription } from "@/types";
+import { daysUntil } from "@/lib/dates";
+import { formatMoney } from "@/lib/money";
+import { downloadFile, exportFilename, subscriptionsToCsv, subscriptionsToJson } from "@/lib/export";
 
 export default function DashboardPage() {
   const {
     subscriptions,
     analytics,
+    loadError,
+    refreshAll,
     activeFilter,
     searchQuery,
     sortBy,
@@ -26,12 +31,6 @@ export default function DashboardPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
-  const [nowTimestamp, setNowTimestamp] = useState<number>(0);
-
-  useEffect(() => {
-    setNowTimestamp(Date.now());
-  }, []);
-
   const categories = [
     { id: "all", label: "All" },
     { id: "entertainment", label: "Entertainment" },
@@ -39,7 +38,9 @@ export default function DashboardPage() {
     { id: "lifestyle", label: "Lifestyle" },
     { id: "news", label: "News" },
     { id: "sports", label: "Sports" },
-    { id: "finance", label: "Finance" }
+    { id: "finance", label: "Finance" },
+    { id: "politics", label: "Politics" },
+    { id: "other", label: "Other" }
   ];
 
   // Filtering & Sorting
@@ -69,6 +70,7 @@ export default function DashboardPage() {
             return (a.name || "").localeCompare(b.name || "");
           case "renewal-asc":
           default:
+            if (!a.renewalDate && !b.renewalDate) return 0;
             if (!a.renewalDate) return 1;
             if (!b.renewalDate) return -1;
             return a.renewalDate.localeCompare(b.renewalDate);
@@ -76,19 +78,14 @@ export default function DashboardPage() {
       });
   }, [subscriptions, activeFilter, searchQuery, sortBy]);
 
-  // Renewal Due Soon (next 7 days) count
+  // Renewal Due Soon: active subscriptions renewing today or within the next 7 calendar days
   const dueSoonCount = useMemo(() => {
-    if (!nowTimestamp) return 0;
-    const today = new Date(nowTimestamp);
-    today.setHours(0, 0, 0, 0);
-    const in7Days = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-
     return subscriptions.filter((s) => {
-      if (s.status !== "active" || !s.renewalDate) return false;
-      const rDate = new Date(s.renewalDate);
-      return rDate >= today && rDate <= in7Days;
+      if (s.status !== "active") return false;
+      const days = daysUntil(s.renewalDate);
+      return days !== null && days >= 0 && days <= 7;
     }).length;
-  }, [subscriptions, nowTimestamp]);
+  }, [subscriptions]);
 
   const handleOpenCreate = () => {
     setEditingSub(null);
@@ -102,65 +99,19 @@ export default function DashboardPage() {
 
   const handleExportJson = () => {
     try {
-      const exportPayload = {
-        app: "Bill Pilot",
-        version: "2.0.0",
-        exportedAt: new Date().toISOString(),
-        count: subscriptions.length,
-        subscriptions
-      };
-      const jsonContent = JSON.stringify(exportPayload, null, 2);
-      const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.setAttribute("download", `bill_pilot_subscriptions_${new Date().toISOString().split("T")[0]}.json`);
-      document.body.appendChild(anchor);
-      anchor.click();
-      setTimeout(() => {
-        if (document.body.contains(anchor)) {
-          document.body.removeChild(anchor);
-        }
-        URL.revokeObjectURL(url);
-      }, 3000);
+      downloadFile(subscriptionsToJson(subscriptions), exportFilename("json"), "application/json");
       addToast(`Exported ${subscriptions.length} subscriptions as JSON`, "success");
-    } catch (err: any) {
-      addToast("Failed to export JSON: " + err.message, "error");
+    } catch (err) {
+      addToast("Failed to export JSON: " + (err instanceof Error ? err.message : "unknown error"), "error");
     }
   };
 
   const handleExportCsv = () => {
     try {
-      const headers = ["ID", "Name", "Price", "Currency", "Frequency", "Category", "Payment Method", "Status", "Start Date", "Renewal Date"];
-      const rows = subscriptions.map((s) => [
-        s.id,
-        `"${(s.name || "").replace(/"/g, '""')}"`,
-        s.price,
-        s.currency || "USD",
-        s.frequency,
-        s.category,
-        `"${(s.paymentMethod || "").replace(/"/g, '""')}"`,
-        s.status,
-        s.startDate,
-        s.renewalDate || ""
-      ]);
-      const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.setAttribute("download", `bill_pilot_subscriptions_${new Date().toISOString().split("T")[0]}.csv`);
-      document.body.appendChild(anchor);
-      anchor.click();
-      setTimeout(() => {
-        if (document.body.contains(anchor)) {
-          document.body.removeChild(anchor);
-        }
-        URL.revokeObjectURL(url);
-      }, 3000);
+      downloadFile(subscriptionsToCsv(subscriptions), exportFilename("csv"), "text/csv");
       addToast(`Exported ${subscriptions.length} subscriptions as CSV`, "success");
-    } catch (err: any) {
-      addToast("Failed to export CSV: " + err.message, "error");
+    } catch (err) {
+      addToast("Failed to export CSV: " + (err instanceof Error ? err.message : "unknown error"), "error");
     }
   };
 
@@ -182,6 +133,7 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={handleExportJson}
               title="Download subscriptions as JSON"
               className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-300 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -193,6 +145,7 @@ export default function DashboardPage() {
             </button>
 
             <button
+              type="button"
               onClick={handleExportCsv}
               title="Download subscriptions as CSV"
               className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-300 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -215,16 +168,37 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {loadError && (
+          <div
+            role="alert"
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-rose-500/30 bg-rose-950/30 px-4 py-3 text-xs text-rose-200"
+          >
+            <span>{loadError}</span>
+            <button
+              type="button"
+              onClick={() => refreshAll()}
+              className="self-start sm:self-auto px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 font-medium transition-colors cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Executive Metrics Grid */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
           {/* Metric 1 */}
           <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4.5">
             <div className="text-xs font-medium text-zinc-400">Monthly Run Rate</div>
             <div className="text-2xl font-semibold text-zinc-100 mt-1.5 tabular">
-              ${analytics?.totalMonthlySpend !== undefined ? analytics.totalMonthlySpend.toFixed(2) : "0.00"}
+              {formatMoney(analytics?.totalMonthlySpend ?? 0, analytics?.currency)}
             </div>
             <div className="text-xs text-zinc-400 mt-1">
-              ${analytics?.totalAnnualSpend !== undefined ? analytics.totalAnnualSpend.toFixed(2) : "0.00"} projected annually
+              {formatMoney(analytics?.totalAnnualSpend ?? 0, analytics?.currency)} projected annually
+              {analytics && analytics.excludedSubscriptionCount > 0 && (
+                <span className="block text-amber-400/90 mt-0.5">
+                  Excludes {analytics.excludedSubscriptionCount} in {analytics.excludedCurrencies.join(", ")}
+                </span>
+              )}
             </div>
           </div>
 
@@ -280,6 +254,8 @@ export default function DashboardPage() {
               return (
                 <button
                   key={cat.id}
+                  type="button"
+                  aria-pressed={isActive}
                   onClick={() => setActiveFilter(cat.id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
                     isActive
@@ -298,6 +274,7 @@ export default function DashboardPage() {
             <div className="relative flex-1 sm:w-60">
               <input
                 type="text"
+                aria-label="Filter services"
                 placeholder="Filter services..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -305,15 +282,18 @@ export default function DashboardPage() {
               />
               {searchQuery && (
                 <button
+                  type="button"
+                  aria-label="Clear search"
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs cursor-pointer"
                 >
-                  ✕
+                  <span aria-hidden="true">✕</span>
                 </button>
               )}
             </div>
 
             <select
+              aria-label="Sort subscriptions"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
               className="px-2.5 py-1.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-zinc-300 text-xs focus:outline-none focus:border-zinc-600 transition-colors"
@@ -329,12 +309,10 @@ export default function DashboardPage() {
         {/* Subscription Cards Grid */}
         {filteredSubscriptions.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredSubscriptions.map((sub, idx) => (
+            {filteredSubscriptions.map((sub) => (
               <SubscriptionCard
                 key={sub.id}
                 subscription={sub}
-                index={idx}
-                nowTimestamp={nowTimestamp}
                 onEdit={handleOpenEdit}
                 onCancel={cancelSub}
                 onReactivate={reactivateSub}
@@ -398,7 +376,7 @@ export default function DashboardPage() {
       <footer className="border-t border-zinc-800/80 py-5 px-4 mt-auto">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-zinc-400 gap-3">
           <div>
-            Bill Pilot • Spring Boot 3.4 & Next.js 16
+            Bill Pilot • Spring Boot 3.5 & Next.js 16
           </div>
           <div className="flex items-center gap-4">
             <Link href="/analytics" className="hover:text-zinc-300 transition-colors">

@@ -3,7 +3,10 @@ package com.billpilot.util;
 import com.billpilot.model.Subscription;
 import com.billpilot.model.User;
 
+import org.springframework.web.util.HtmlUtils;
+
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 public class EmailTemplateBuilder {
 
@@ -16,20 +19,25 @@ public class EmailTemplateBuilder {
                 ? subscription.getRenewalDate().format(DATE_FORMATTER)
                 : "Soon";
 
-        String formattedPrice = String.format("%s %.2f (%s)",
+        String frequency = subscription.getFrequency() != null ? subscription.getFrequency().getValue() : "recurring";
+        double price = subscription.getPrice() != null ? subscription.getPrice() : 0.0;
+        String formattedPrice = String.format(Locale.US, "%s %.2f (%s)",
                 subscription.getCurrency(),
-                subscription.getPrice(),
-                subscription.getFrequency().getValue());
+                price,
+                frequency);
+
+        // User-controlled values: strip line breaks from the header and escape everything placed in HTML.
+        String plainName = singleLine(subscription.getName());
 
         String subject = switch (daysLeft) {
-            case 7 -> String.format("📅 Reminder: Your %s Subscription Renews in 7 Days!", subscription.getName());
-            case 5 -> String.format("⏳ %s Renews in 5 Days – Stay Subscribed!", subscription.getName());
-            case 2 -> String.format("🚀 2 Days Left! %s Subscription Renewal", subscription.getName());
-            case 1 -> String.format("⚡ Final Reminder: %s Renews Tomorrow!", subscription.getName());
-            default -> String.format("🔔 Reminder: Your %s Subscription is Renewing Soon!", subscription.getName());
+            case 7 -> String.format("📅 Reminder: Your %s Subscription Renews in 7 Days!", plainName);
+            case 5 -> String.format("⏳ %s Renews in 5 Days – Stay Subscribed!", plainName);
+            case 2 -> String.format("🚀 2 Days Left! %s Subscription Renewal", plainName);
+            case 1 -> String.format("⚡ Final Reminder: %s Renews Tomorrow!", plainName);
+            default -> String.format("🔔 Reminder: Your %s Subscription is Renewing Soon!", plainName);
         };
 
-        String html = String.format("""
+        String html = String.format(Locale.US, """
             <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 0; background-color: #f4f7fa;">
                 <table cellpadding="0" cellspacing="0" border="0" width="100%%" style="background-color: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
                     <tr>
@@ -79,15 +87,23 @@ public class EmailTemplateBuilder {
                 </table>
             </div>
             """,
-                user.getName(),
-                subscription.getName(),
-                renewalDateFormatted,
+                escape(user.getName()),
+                escape(subscription.getName()),
+                escape(renewalDateFormatted),
                 daysLeft,
-                subscription.getName(),
-                formattedPrice,
-                subscription.getPaymentMethod()
+                escape(subscription.getName()),
+                escape(formattedPrice),
+                escape(subscription.getPaymentMethod())
         );
 
         return new EmailPayload(subject, html);
+    }
+
+    private static String escape(String value) {
+        return HtmlUtils.htmlEscape(value == null ? "" : value);
+    }
+
+    private static String singleLine(String value) {
+        return value == null ? "" : value.replaceAll("[\r\n]+", " ").trim();
     }
 }
