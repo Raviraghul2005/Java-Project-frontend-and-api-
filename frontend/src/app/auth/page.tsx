@@ -11,8 +11,8 @@ export default function AuthPage() {
 
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("demo@billpilot.com");
-  const [password, setPassword] = useState("BillPilot2026!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -30,12 +30,6 @@ export default function AuthPage() {
     if (success) {
       router.push("/");
     }
-  };
-
-  const handleFillDemo = () => {
-    setEmail("demo@billpilot.com");
-    setPassword("BillPilot2026!");
-    setName("Demo User");
   };
 
   return (
@@ -61,6 +55,7 @@ export default function AuthPage() {
         <div className="flex rounded-lg bg-zinc-950 p-1 border border-zinc-800/80 mb-5">
           <button
             type="button"
+            aria-pressed={mode === "login"}
             onClick={() => setMode("login")}
             className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
               mode === "login"
@@ -72,6 +67,7 @@ export default function AuthPage() {
           </button>
           <button
             type="button"
+            aria-pressed={mode === "register"}
             onClick={() => setMode("register")}
             className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
               mode === "register"
@@ -85,29 +81,33 @@ export default function AuthPage() {
 
         {/* Backend Status indicator */}
         <div className="mb-4 flex items-center justify-between text-xs py-1.5 px-2.5 rounded-md bg-zinc-950/60 border border-zinc-800/60">
-          <span className="text-zinc-400 text-[11px]">Backend Port 5500</span>
+          <span className="text-zinc-400 text-[11px]">Bill Pilot API</span>
           <span
             className={`text-[11px] font-medium flex items-center gap-1.5 ${
-              isBackendConnected ? "text-emerald-400" : "text-zinc-400"
+              isBackendConnected ? "text-emerald-400" : "text-rose-400"
             }`}
           >
             <span
               className={`size-1.5 rounded-full ${
-                isBackendConnected ? "bg-emerald-400" : "bg-zinc-500"
+                isBackendConnected ? "bg-emerald-400" : "bg-rose-400"
               }`}
             />
-            {isBackendConnected ? "Connected" : "Demo Mode"}
+            {isBackendConnected ? "Connected" : "Unreachable"}
           </span>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
           {mode === "register" && (
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
+              <label htmlFor="auth-name" className="block text-xs font-medium text-zinc-300 mb-1">
                 Full name
               </label>
               <input
+                id="auth-name"
                 type="text"
+                autoComplete="name"
+                minLength={2}
+                maxLength={50}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Alex Morgan"
@@ -118,11 +118,13 @@ export default function AuthPage() {
           )}
 
           <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
+            <label htmlFor="auth-email" className="block text-xs font-medium text-zinc-300 mb-1">
               Email address
             </label>
             <input
+              id="auth-email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="user@example.com"
@@ -132,11 +134,15 @@ export default function AuthPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
+            <label htmlFor="auth-password" className="block text-xs font-medium text-zinc-300 mb-1">
               Password
             </label>
             <input
+              id="auth-password"
               type="password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              minLength={mode === "register" ? 6 : undefined}
+              maxLength={72}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••••••"
@@ -153,20 +159,6 @@ export default function AuthPage() {
             {loading ? "Authenticating..." : mode === "login" ? "Sign in" : "Create account"}
           </button>
         </form>
-
-        {/* Demo credentials shortcut */}
-        <div className="mt-5 pt-4 border-t border-zinc-800/60 text-center">
-          <button
-            type="button"
-            onClick={handleFillDemo}
-            className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
-          >
-            Fill demo credentials
-          </button>
-          <div className="text-[10px] text-zinc-500 mt-0.5 tabular">
-            demo@billpilot.com • BillPilot2026!
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ package com.billpilot.dto.request;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,9 +21,11 @@ public class SignUpRequest {
 
     @NotBlank(message = "User Email is required")
     @Email(message = "Please enter a valid email address")
+    @Pattern(regexp = "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", message = "Please enter a valid email address")
+    @Size(max = 254, message = "Email must be at most 254 characters")
     private String email;
 
     @NotBlank(message = "User Password is required")
-    @Size(min = 6, message = "Password must be at least 6 characters")
+    @Size(min = 6, max = 72, message = "Password must be between 6 and 72 characters")
     private String password;
 }

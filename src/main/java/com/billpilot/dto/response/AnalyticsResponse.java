@@ -19,6 +19,11 @@ public class AnalyticsResponse {
     private double totalAnnualSpend;
     private int activeCount;
 
+    // All figures are in this currency; subscriptions billed in other currencies are left out.
+    private String currency;
+    private List<String> excludedCurrencies;
+    private int excludedSubscriptionCount;
+
     // Subscription Fatigue Index (0 - 100)
     private int fatigueIndex;
     private String fatigueLevel; // "OPTIMAL", "MODERATE", "ELEVATED", "BURNOUT"

@@ -20,13 +20,33 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AnalyticsService {
 
+    private static final String DEFAULT_CURRENCY = "USD";
+
     private final SubscriptionRepository subscriptionRepository;
 
     public AnalyticsResponse computeAnalyticsAudit(User user) {
+        LocalDate today = LocalDate.now();
         List<Subscription> subscriptions = subscriptionRepository.findByUser(user.getId());
-        List<Subscription> activeSubs = subscriptions.stream()
+        // In-memory only: keeps renewal dates current between runs of the daily roll-forward job.
+        subscriptions.forEach(s -> s.rollRenewalDateForward(today));
+
+        List<Subscription> allActive = subscriptions.stream()
                 .filter(s -> s.getStatus() == SubscriptionStatus.ACTIVE)
                 .toList();
+
+        // Prices in different currencies cannot be added together, so every figure below is computed in
+        // the user's primary (most used) currency and the rest are reported as excluded.
+        String primaryCurrency = resolvePrimaryCurrency(allActive);
+        List<Subscription> activeSubs = allActive.stream()
+                .filter(s -> currencyOf(s).equals(primaryCurrency))
+                .toList();
+        List<String> excludedCurrencies = allActive.stream()
+                .map(AnalyticsService::currencyOf)
+                .filter(c -> !c.equals(primaryCurrency))
+                .distinct()
+                .sorted()
+                .toList();
+        int excludedCount = allActive.size() - activeSubs.size();
 
         double totalMonthlySpend = 0.0;
         for (Subscription sub : activeSubs) {
@@ -70,6 +90,9 @@ public class AnalyticsService {
                 .totalMonthlySpend(totalMonthlySpend)
                 .totalAnnualSpend(totalAnnualSpend)
                 .activeCount(activeSubs.size())
+                .currency(primaryCurrency)
+                .excludedCurrencies(excludedCurrencies)
+                .excludedSubscriptionCount(excludedCount)
                 .fatigueIndex(fatigueIndex)
                 .fatigueLevel(rating.level)
                 .fatigueColor(rating.color)
@@ -87,16 +110,41 @@ public class AnalyticsService {
     private double toMonthlyPrice(Double price, Frequency frequency) {
         if (price == null || frequency == null) return 0.0;
         return switch (frequency) {
-            case DAILY -> price * 30.0;
-            case WEEKLY -> price * 4.33;
+            case DAILY -> price * 365.0 / 12.0;
+            case WEEKLY -> price * 52.0 / 12.0;
             case MONTHLY -> price;
             case YEARLY -> price / 12.0;
         };
     }
 
+    private static String currencyOf(Subscription sub) {
+        String currency = sub.getCurrency();
+        return currency == null || currency.isBlank() ? DEFAULT_CURRENCY : currency.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * The currency used by the most active subscriptions. Ties go to the default currency (USD),
+     * then to the alphabetically first code, so the choice is stable between requests.
+     */
+    private static String resolvePrimaryCurrency(List<Subscription> activeSubs) {
+        return activeSubs.stream()
+                .collect(Collectors.groupingBy(AnalyticsService::currencyOf, Collectors.counting()))
+                .entrySet().stream()
+                .max(Map.Entry.<String, Long>comparingByValue()
+                        .thenComparing(e -> DEFAULT_CURRENCY.equals(e.getKey()))
+                        .thenComparing(Map.Entry.comparingByKey(Comparator.reverseOrder())))
+                .map(Map.Entry::getKey)
+                .orElse(DEFAULT_CURRENCY);
+    }
+
+    /** Legacy documents may lack a category; treat them as OTHER instead of failing the whole audit. */
+    private static Category categoryOf(Subscription sub) {
+        return sub.getCategory() != null ? sub.getCategory() : Category.OTHER;
+    }
+
     private List<AnalyticsResponse.RedundancyGroup> computeRedundancies(List<Subscription> activeSubs) {
         Map<Category, List<Subscription>> byCategory = activeSubs.stream()
-                .collect(Collectors.groupingBy(Subscription::getCategory));
+                .collect(Collectors.groupingBy(AnalyticsService::categoryOf));
 
         List<AnalyticsResponse.RedundancyGroup> groups = new ArrayList<>();
 
@@ -194,7 +242,7 @@ public class AnalyticsService {
             list.add(AnalyticsResponse.VampireProjection.builder()
                     .subscriptionId(sub.getId())
                     .name(sub.getName())
-                    .category(sub.getCategory().getValue())
+                    .category(categoryOf(sub).getValue())
                     .monthlyCost(round(monthly))
                     .oneYearSpend(oneYr)
                     .threeYearSpend(threeYr)
@@ -210,7 +258,7 @@ public class AnalyticsService {
 
     private List<AnalyticsResponse.CategoryBreakdown> computeCategoryBreakdowns(List<Subscription> activeSubs, double totalMonthlySpend) {
         Map<Category, List<Subscription>> map = activeSubs.stream()
-                .collect(Collectors.groupingBy(Subscription::getCategory));
+                .collect(Collectors.groupingBy(AnalyticsService::categoryOf));
 
         List<AnalyticsResponse.CategoryBreakdown> list = new ArrayList<>();
         for (Map.Entry<Category, List<Subscription>> entry : map.entrySet()) {

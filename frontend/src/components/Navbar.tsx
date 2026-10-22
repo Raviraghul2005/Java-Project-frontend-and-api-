@@ -33,13 +33,14 @@ export function Navbar({ onOpenNewModal }: { onOpenNewModal: () => void }) {
           </Link>
 
           {/* Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1">
+          <nav aria-label="Primary" className="hidden md:flex items-center gap-1">
             {navLinks.map((link) => {
               const isActive = pathname === link.href;
               return (
                 <Link
                   key={link.href}
                   href={link.href}
+                  aria-current={isActive ? "page" : undefined}
                   className={`relative px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
                     isActive
                       ? "bg-zinc-800 text-zinc-100 font-semibold shadow-xs"
@@ -59,10 +60,10 @@ export function Navbar({ onOpenNewModal }: { onOpenNewModal: () => void }) {
           <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400">
             <span
               className={`size-1.5 rounded-full ${
-                isBackendConnected ? "bg-emerald-400" : "bg-zinc-500"
+                isBackendConnected ? "bg-emerald-400" : "bg-rose-400"
               }`}
             />
-            <span>{isBackendConnected ? "API 5500" : "Standalone"}</span>
+            <span>{isBackendConnected ? "API online" : "API offline"}</span>
           </div>
 
           <button
@@ -92,7 +93,7 @@ export function Navbar({ onOpenNewModal }: { onOpenNewModal: () => void }) {
               </span>
               <button
                 onClick={logout}
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors px-1.5 py-1 rounded hover:bg-zinc-800"
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors px-1.5 py-1 rounded hover:bg-zinc-800 cursor-pointer"
               >
                 Sign out
               </button>
@@ -107,6 +108,28 @@ export function Navbar({ onOpenNewModal }: { onOpenNewModal: () => void }) {
           )}
         </div>
       </div>
+
+      {/* Mobile navigation: the desktop nav above is hidden below the md breakpoint */}
+      <nav
+        aria-label="Primary (mobile)"
+        className="md:hidden border-t border-zinc-800/60 px-4 py-1.5 flex items-center gap-1 overflow-x-auto"
+      >
+        {navLinks.map((link) => {
+          const isActive = pathname === link.href;
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              aria-current={isActive ? "page" : undefined}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
+      </nav>
     </header>
   );
 }

@@ -84,9 +84,38 @@ class SubscriptionServiceTest {
         assertNotNull(result);
         assertEquals("Spotify", result.getName());
         assertEquals("user-123", result.getUser());
-        assertEquals(start.plusDays(30), result.getRenewalDate());
+        assertEquals(start.plusMonths(1), result.getRenewalDate());
         assertEquals(SubscriptionStatus.ACTIVE, result.getStatus());
         verify(subscriptionRepository).save(any(Subscription.class));
+    }
+
+    @Test
+    void testCreateSubscriptionWithOldStartDateIsActiveWithUpcomingRenewal() {
+        LocalDate today = LocalDate.now();
+        CreateSubscriptionRequest request = CreateSubscriptionRequest.builder()
+                .name("Old Gym")
+                .price(30.0)
+                .frequency(Frequency.MONTHLY)
+                .category(Category.LIFESTYLE)
+                .paymentMethod("Card")
+                .startDate(today.minusMonths(7).minusDays(3))
+                .build();
+
+        when(subscriptionRepository.save(any(Subscription.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Subscription result = subscriptionService.createSubscription(request, "user-123");
+
+        assertEquals(SubscriptionStatus.ACTIVE, result.getStatus());
+        assertFalse(result.getRenewalDate().isBefore(today), "renewal must be today or later");
+        assertTrue(result.getRenewalDate().isBefore(today.plusMonths(1).plusDays(1)), "renewal must be within one period");
+    }
+
+    @Test
+    void testGetSubscriptionByIdForbiddenForOtherUsersSubscription() {
+        testSub.setUser("someone-else");
+        when(subscriptionRepository.findById("sub-456")).thenReturn(Optional.of(testSub));
+
+        assertThrows(ForbiddenException.class, () -> subscriptionService.getSubscriptionById("sub-456", testUser));
     }
 
     @Test

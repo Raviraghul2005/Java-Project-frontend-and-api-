@@ -1,13 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Subscription } from "@/types";
 import { findLogoForSubscription, getSubscriptionInitials } from "@/lib/catalog";
+import { daysUntil } from "@/lib/dates";
+import { formatMoney, toMonthly } from "@/lib/money";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface SubscriptionCardProps {
   subscription: Subscription;
-  index: number;
-  nowTimestamp?: number;
   onEdit: (sub: Subscription) => void;
   onCancel: (id: string) => void;
   onReactivate?: (id: string) => void;
@@ -16,33 +17,29 @@ interface SubscriptionCardProps {
 
 export function SubscriptionCard({
   subscription,
-  nowTimestamp,
   onEdit,
   onCancel,
   onReactivate,
   onDelete
 }: SubscriptionCardProps) {
+  const [pendingAction, setPendingAction] = useState<"cancel" | "delete" | null>(null);
+
   const logoUrl = findLogoForSubscription(subscription.name);
   const initials = getSubscriptionInitials(subscription.name);
   const isCancelled = subscription.status === "cancelled";
   const isExpired = subscription.status === "expired";
+  const isInactive = isCancelled || isExpired;
+  const currency = subscription.currency || "USD";
 
-  // Days to renewal calculation
-  let daysLeft: number | null = null;
-  if (subscription.renewalDate && nowTimestamp) {
-    const today = new Date(nowTimestamp);
-    today.setHours(0, 0, 0, 0);
-    const target = new Date(subscription.renewalDate);
-    target.setHours(0, 0, 0, 0);
-    const diff = target.getTime() - today.getTime();
-    daysLeft = Math.ceil(diff / (1000 * 60 * 60 * 24));
-  }
+  // Whole calendar days until renewal, computed from local dates (null when no/invalid renewal date)
+  const daysLeft = daysUntil(subscription.renewalDate);
+  const monthlyPrice = toMonthly(subscription.price, subscription.frequency);
 
-  // Monthly normalized price
-  let monthlyPrice = subscription.price;
-  if (subscription.frequency === "yearly") monthlyPrice = subscription.price / 12;
-  if (subscription.frequency === "weekly") monthlyPrice = subscription.price * 4.33;
-  if (subscription.frequency === "daily") monthlyPrice = subscription.price * 30;
+  const handleConfirm = () => {
+    if (pendingAction === "cancel") onCancel(subscription.id);
+    if (pendingAction === "delete") onDelete(subscription.id);
+    setPendingAction(null);
+  };
 
   return (
     <div
@@ -62,7 +59,7 @@ export function SubscriptionCard({
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={logoUrl}
-                  alt={subscription.name}
+                  alt=""
                   className="size-full object-contain"
                   onError={(e) => {
                     e.currentTarget.style.display = "none";
@@ -101,14 +98,14 @@ export function SubscriptionCard({
         <div className="flex items-baseline justify-between mb-3.5 pt-1 border-t border-zinc-800/40">
           <div className="flex items-baseline gap-1">
             <span className="text-xl font-semibold text-zinc-100 tabular">
-              ${subscription.price.toFixed(2)}
+              {formatMoney(subscription.price, currency)}
             </span>
             <span className="text-xs text-zinc-400">/{subscription.frequency}</span>
           </div>
 
           {subscription.frequency !== "monthly" && (
             <span className="text-xs text-zinc-400 tabular">
-              ~${monthlyPrice.toFixed(2)}/mo
+              ~{formatMoney(monthlyPrice, currency)}/mo
             </span>
           )}
         </div>
@@ -117,11 +114,11 @@ export function SubscriptionCard({
         <div className="text-xs text-zinc-300 py-1.5 px-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800/60 flex items-center justify-between mb-2">
           <span className="text-zinc-400">Renewal</span>
           <span className="font-medium">
-            {isCancelled ? (
+            {isInactive ? (
               <span className="text-zinc-500">Inactive</span>
             ) : daysLeft !== null ? (
               daysLeft < 0 ? (
-                <span className="text-rose-400">Expired</span>
+                <span className="text-rose-400">Overdue</span>
               ) : daysLeft === 0 ? (
                 <span className="text-amber-400 font-semibold">Today</span>
               ) : daysLeft === 1 ? (
@@ -138,13 +135,12 @@ export function SubscriptionCard({
 
       {/* Action Controls Footer */}
       <div className="flex items-center justify-between pt-3 mt-1 border-t border-zinc-800/50 text-xs">
-        <span className="text-zinc-400 text-[11px]">
-          {subscription.currency || "USD"}
-        </span>
+        <span className="text-zinc-400 text-[11px]">{currency}</span>
 
         <div className="flex items-center gap-1">
-          {isCancelled ? (
+          {isInactive ? (
             <button
+              type="button"
               onClick={() => onReactivate?.(subscription.id)}
               className="px-2 py-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors cursor-pointer"
             >
@@ -152,7 +148,8 @@ export function SubscriptionCard({
             </button>
           ) : (
             <button
-              onClick={() => onCancel(subscription.id)}
+              type="button"
+              onClick={() => setPendingAction("cancel")}
               className="px-2 py-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               Cancel
@@ -160,23 +157,40 @@ export function SubscriptionCard({
           )}
 
           <button
+            type="button"
             onClick={() => onEdit(subscription)}
-            className="px-2 py-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            className="px-2 py-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             Edit
           </button>
 
           <button
-            onClick={() => onDelete(subscription.id)}
-            className="px-1.5 py-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+            type="button"
+            onClick={() => setPendingAction("delete")}
+            className="px-1.5 py-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
             title="Delete"
+            aria-label={`Delete ${subscription.name}`}
           >
-            <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingAction !== null}
+        title={pendingAction === "delete" ? `Delete ${subscription.name}?` : `Cancel ${subscription.name}?`}
+        message={
+          pendingAction === "delete"
+            ? "This permanently removes the subscription and its history. This cannot be undone."
+            : "The subscription will be marked as cancelled and excluded from spend and renewal tracking. You can reactivate it later."
+        }
+        confirmLabel={pendingAction === "delete" ? "Delete" : "Cancel subscription"}
+        destructive={pendingAction === "delete"}
+        onConfirm={handleConfirm}
+        onCancel={() => setPendingAction(null)}
+      />
     </div>
   );
 }

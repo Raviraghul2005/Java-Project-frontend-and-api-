@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Subscription, CreateSubscriptionInput, Frequency, Category } from "@/types";
+import React, { useState, useId, useRef } from "react";
+import { Subscription, CreateSubscriptionInput, Frequency, Category, SubscriptionStatus } from "@/types";
 import { PRESET_SUBSCRIPTIONS } from "@/lib/catalog";
 import { useApp } from "@/context/AppContext";
+import { todayLocal } from "@/lib/dates";
+import { useDialog } from "@/lib/useDialog";
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -11,60 +13,47 @@ interface SubscriptionModalProps {
   editingSubscription?: Subscription | null;
 }
 
-export function SubscriptionModal({
-  isOpen,
-  onClose,
-  editingSubscription
-}: SubscriptionModalProps) {
+const CURRENCIES = [
+  { code: "USD", label: "USD ($)" },
+  { code: "EUR", label: "EUR (€)" },
+  { code: "GBP", label: "GBP (£)" },
+  { code: "INR", label: "INR (₹)" },
+  { code: "CAD", label: "CAD ($)" },
+  { code: "AUD", label: "AUD ($)" }
+];
+
+const inputClass =
+  "w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 placeholder-zinc-500 text-xs focus:outline-none focus:border-zinc-600 transition-colors";
+const labelClass = "block text-xs font-medium text-zinc-300 mb-1";
+
+/**
+ * The form is mounted only while the dialog is open, and keyed by the subscription being edited, so its
+ * state is initialised fresh from props every time it opens (no reset-in-an-effect needed).
+ */
+export function SubscriptionModal(props: SubscriptionModalProps) {
+  if (!props.isOpen) return null;
+  return <SubscriptionModalContent key={props.editingSubscription?.id ?? "new"} {...props} />;
+}
+
+function SubscriptionModalContent({ onClose, editingSubscription }: SubscriptionModalProps) {
   const { createSub, updateSub, addToast } = useApp();
+  const uid = useId();
+  const id = (field: string) => `${uid}-${field}`;
+  const dialogRef = useDialog<HTMLDivElement>(true, onClose);
+  const mouseDownOnBackdrop = useRef(false);
 
-  const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
-  const [currency, setCurrency] = useState("USD");
-  const [frequency, setFrequency] = useState<Frequency>("monthly");
-  const [category, setCategory] = useState<Category>("entertainment");
-  const [paymentMethod, setPaymentMethod] = useState("Credit Card");
-  const [startDate, setStartDate] = useState("");
-  const [renewalDate, setRenewalDate] = useState("");
-  const [status, setStatus] = useState<"active" | "cancelled" | "expired">("active");
+  const [name, setName] = useState(editingSubscription?.name ?? "");
+  const [price, setPrice] = useState(editingSubscription ? String(editingSubscription.price) : "");
+  const [currency, setCurrency] = useState(editingSubscription?.currency || "USD");
+  const [frequency, setFrequency] = useState<Frequency>(editingSubscription?.frequency || "monthly");
+  const [category, setCategory] = useState<Category>(editingSubscription?.category || "entertainment");
+  const [paymentMethod, setPaymentMethod] = useState(
+    editingSubscription ? editingSubscription.paymentMethod || "Credit Card" : "Credit Card"
+  );
+  const [startDate, setStartDate] = useState(editingSubscription ? editingSubscription.startDate || "" : todayLocal());
+  const [renewalDate, setRenewalDate] = useState(editingSubscription?.renewalDate || "");
+  const [status, setStatus] = useState<SubscriptionStatus>(editingSubscription?.status || "active");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (editingSubscription) {
-      setName(editingSubscription.name);
-      setPrice(String(editingSubscription.price));
-      setCurrency(editingSubscription.currency || "USD");
-      setFrequency(editingSubscription.frequency || "monthly");
-      setCategory(editingSubscription.category || "entertainment");
-      setPaymentMethod(editingSubscription.paymentMethod || "Credit Card");
-      setStartDate(editingSubscription.startDate || "");
-      setRenewalDate(editingSubscription.renewalDate || "");
-      setStatus(editingSubscription.status || "active");
-    } else {
-      setName("");
-      setPrice("");
-      setCurrency("USD");
-      setFrequency("monthly");
-      setCategory("entertainment");
-      setPaymentMethod("Credit Card");
-      setStartDate(new Date().toISOString().split("T")[0]);
-      setRenewalDate("");
-      setStatus("active");
-    }
-  }, [editingSubscription, isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   const handleSelectPreset = (preset: (typeof PRESET_SUBSCRIPTIONS)[0]) => {
     setName(preset.name);
@@ -78,34 +67,49 @@ export function SubscriptionModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !price || !startDate) {
+    const trimmedName = name.trim();
+    const trimmedPayment = paymentMethod.trim();
+
+    if (!trimmedName || !price || !startDate || !trimmedPayment) {
       addToast("Please fill in all required fields", "error");
+      return;
+    }
+    if (trimmedName.length < 2 || trimmedName.length > 100) {
+      addToast("Service name must be between 2 and 100 characters", "error");
+      return;
+    }
+    const parsedPrice = parseFloat(price);
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0 || parsedPrice > 1_000_000) {
+      addToast("Please enter a valid price between 0 and 1,000,000", "error");
       return;
     }
 
     setIsSubmitting(true);
-    const parsedPrice = parseFloat(price);
-    if (isNaN(parsedPrice) || parsedPrice < 0) {
-      addToast("Please enter a valid positive price", "error");
-      setIsSubmitting(false);
-      return;
-    }
+
+    // Only send a renewal date the user actually set/changed. When it is omitted the server derives the
+    // next billing date from the start date and frequency (and keeps it current as time passes).
+    const renewalChanged = editingSubscription
+      ? renewalDate !== (editingSubscription.renewalDate || "")
+      : renewalDate !== "";
 
     const payload: CreateSubscriptionInput = {
-      name: name.trim(),
+      name: trimmedName,
       price: parsedPrice,
       currency,
       frequency,
       category,
-      paymentMethod: paymentMethod.trim(),
+      paymentMethod: trimmedPayment,
       startDate,
-      renewalDate: renewalDate ? renewalDate : undefined,
-      status
+      renewalDate: renewalChanged && renewalDate ? renewalDate : undefined
     };
-
-    let success = false;
+    let success: boolean;
     if (editingSubscription) {
-      success = await updateSub(editingSubscription.id, payload);
+      // Sending frequency/startDate makes the server recompute the renewal date, so only include them when
+      // they changed; otherwise saving an unrelated field would overwrite a manually set renewal date.
+      const update: Partial<CreateSubscriptionInput> = { ...payload, status };
+      if (frequency === editingSubscription.frequency) delete update.frequency;
+      if (startDate === editingSubscription.startDate) delete update.startDate;
+      success = await updateSub(editingSubscription.id, update);
     } else {
       success = await createSub(payload);
     }
@@ -118,16 +122,28 @@ export function SubscriptionModal({
 
   return (
     <div
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+      // Close only on a genuine click on the backdrop: pressing inside a field and releasing outside
+      // (e.g. while selecting text) must not discard the form.
+      onMouseDown={(e) => {
+        mouseDownOnBackdrop.current = e.target === e.currentTarget;
+      }}
+      onMouseUp={(e) => {
+        if (mouseDownOnBackdrop.current && e.target === e.currentTarget) onClose();
+        mouseDownOnBackdrop.current = false;
       }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto"
     >
-      <div className="w-full max-w-xl rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={id("title")}
+        className="w-full max-w-xl rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-5">
           <div>
-            <h2 className="text-base font-semibold text-zinc-100">
+            <h2 id={id("title")} className="text-base font-semibold text-zinc-100">
               {editingSubscription ? "Edit Subscription" : "Add Subscription"}
             </h2>
             <p className="text-xs text-zinc-400 mt-0.5">
@@ -137,19 +153,19 @@ export function SubscriptionModal({
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="size-7 rounded-md bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+            aria-label="Close dialog"
+            className="size-7 rounded-md bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white transition-colors cursor-pointer"
           >
-            ✕
+            <span aria-hidden="true">✕</span>
           </button>
         </div>
 
         {/* Preset Selector */}
         {!editingSubscription && (
           <div className="mb-5">
-            <label className="block text-xs font-medium text-zinc-400 mb-2">
-              Popular Presets
-            </label>
+            <span className="block text-xs font-medium text-zinc-400 mb-2">Popular Presets</span>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-32 overflow-y-auto p-1.5 rounded-lg bg-zinc-950 border border-zinc-800/80">
               {PRESET_SUBSCRIPTIONS.map((preset) => (
                 <button
@@ -161,7 +177,7 @@ export function SubscriptionModal({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={preset.logo}
-                    alt={preset.name}
+                    alt=""
                     className="size-4 object-contain flex-shrink-0"
                     onError={(e) => {
                       e.currentTarget.style.display = "none";
@@ -184,61 +200,70 @@ export function SubscriptionModal({
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
+            <label htmlFor={id("name")} className={labelClass}>
               Service Name *
             </label>
             <input
+              id={id("name")}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Netflix, Claude Pro, Spotify"
               required
-              className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 placeholder-zinc-500 text-xs focus:outline-none focus:border-zinc-600 transition-colors"
+              minLength={2}
+              maxLength={100}
+              className={inputClass}
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
+              <label htmlFor={id("price")} className={labelClass}>
                 Price *
               </label>
               <input
+                id={id("price")}
                 type="number"
                 step="0.01"
                 min="0"
+                max="1000000"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
                 placeholder="19.99"
                 required
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 placeholder-zinc-500 text-xs tabular focus:outline-none focus:border-zinc-600 transition-colors"
+                className={`${inputClass} tabular`}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
+              <label htmlFor={id("currency")} className={labelClass}>
                 Currency
               </label>
               <select
+                id={id("currency")}
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs focus:outline-none focus:border-zinc-600 transition-colors"
+                className={inputClass}
               >
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-                <option value="GBP">GBP (£)</option>
+                {CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
+              <label htmlFor={id("frequency")} className={labelClass}>
                 Billing Frequency *
               </label>
               <select
+                id={id("frequency")}
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value as Frequency)}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs focus:outline-none focus:border-zinc-600 transition-colors"
+                className={inputClass}
               >
                 <option value="monthly">Monthly</option>
                 <option value="yearly">Yearly</option>
@@ -248,13 +273,14 @@ export function SubscriptionModal({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
+              <label htmlFor={id("category")} className={labelClass}>
                 Category *
               </label>
               <select
+                id={id("category")}
                 value={category}
                 onChange={(e) => setCategory(e.target.value as Category)}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs focus:outline-none focus:border-zinc-600 transition-colors"
+                className={inputClass}
               >
                 <option value="entertainment">Entertainment</option>
                 <option value="technology">Technology</option>
@@ -262,6 +288,7 @@ export function SubscriptionModal({
                 <option value="news">News</option>
                 <option value="sports">Sports</option>
                 <option value="finance">Finance</option>
+                <option value="politics">Politics</option>
                 <option value="other">Other</option>
               </select>
             </div>
@@ -269,13 +296,14 @@ export function SubscriptionModal({
 
           {editingSubscription && (
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
+              <label htmlFor={id("status")} className={labelClass}>
                 Status
               </label>
               <select
+                id={id("status")}
                 value={status}
-                onChange={(e) => setStatus(e.target.value as any)}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs focus:outline-none focus:border-zinc-600 transition-colors"
+                onChange={(e) => setStatus(e.target.value as SubscriptionStatus)}
+                className={inputClass}
               >
                 <option value="active">Active</option>
                 <option value="cancelled">Cancelled</option>
@@ -285,45 +313,56 @@ export function SubscriptionModal({
           )}
 
           <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
+            <label htmlFor={id("payment")} className={labelClass}>
               Payment Method *
             </label>
             <input
+              id={id("payment")}
               type="text"
               value={paymentMethod}
               onChange={(e) => setPaymentMethod(e.target.value)}
               placeholder="e.g. Apple Pay, Credit Card (Visa), PayPal"
               required
-              className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 placeholder-zinc-500 text-xs focus:outline-none focus:border-zinc-600 transition-colors"
+              maxLength={100}
+              className={inputClass}
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
+              <label htmlFor={id("start")} className={labelClass}>
                 Start Date *
               </label>
               <input
+                id={id("start")}
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 required
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs tabular focus:outline-none focus:border-zinc-600 transition-colors"
+                min="1970-01-01"
+                max="2200-12-31"
+                className={`${inputClass} tabular`}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
+              <label htmlFor={id("renewal")} className={labelClass}>
                 Next Renewal Date (Optional)
               </label>
               <input
+                id={id("renewal")}
                 type="date"
                 value={renewalDate}
                 onChange={(e) => setRenewalDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs tabular focus:outline-none focus:border-zinc-600 transition-colors"
+                aria-describedby={id("renewal-hint")}
+                min="1970-01-01"
+                max="2200-12-31"
+                className={`${inputClass} tabular`}
               />
-              <span className="text-[10px] text-zinc-500 block mt-0.5">
-                Leave blank to calculate from start date + frequency
+              <span id={id("renewal-hint")} className="text-[10px] text-zinc-500 block mt-0.5">
+                {editingSubscription
+                  ? "Changing the start date or frequency recalculates this automatically, unless you set a date here"
+                  : "Leave blank to calculate from start date + frequency"}
               </span>
             </div>
           </div>
@@ -333,7 +372,7 @@ export function SubscriptionModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
             >
               Cancel
             </button>

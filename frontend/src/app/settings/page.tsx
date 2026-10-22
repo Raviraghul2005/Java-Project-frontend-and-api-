@@ -3,8 +3,13 @@
 import React, { useState, useRef } from "react";
 import { Navbar } from "@/components/Navbar";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useApp } from "@/context/AppContext";
 import { api } from "@/lib/api";
+import { downloadFile, exportFilename, subscriptionsToCsv, subscriptionsToJson } from "@/lib/export";
+
+const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5500").replace(/\/+$/, "");
+const MAX_IMPORT_FILE_BYTES = 1_000_000;
 
 export default function SettingsPage() {
   const {
@@ -21,6 +26,8 @@ export default function SettingsPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [testingHealth, setTestingHealth] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<"clear" | "demo" | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePingBackend = async () => {
@@ -28,93 +35,37 @@ export default function SettingsPage() {
     const ok = await api.checkHealth();
     setTestingHealth(false);
     if (ok) {
-      addToast("Backend Port 5500 is online and responding", "success");
+      addToast("Backend is online and responding", "success");
     } else {
-      addToast("Backend Port 5500 is offline. Start via 'mvn spring-boot:run'", "error");
+      addToast(`Backend at ${API_ORIGIN} is offline. Start it with 'mvn spring-boot:run'`, "error");
     }
     refreshAll();
   };
 
   const handleExportJson = () => {
     try {
-      const exportPayload = {
-        app: "Bill Pilot",
-        version: "2.0.0",
-        exportedAt: new Date().toISOString(),
-        count: subscriptions.length,
-        subscriptions
-      };
-      const jsonContent = JSON.stringify(exportPayload, null, 2);
-      const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.setAttribute("download", `bill_pilot_subscriptions_${new Date().toISOString().split("T")[0]}.json`);
-      document.body.appendChild(anchor);
-      anchor.click();
-      setTimeout(() => {
-        if (document.body.contains(anchor)) {
-          document.body.removeChild(anchor);
-        }
-        URL.revokeObjectURL(url);
-      }, 3000);
+      downloadFile(subscriptionsToJson(subscriptions), exportFilename("json"), "application/json");
       addToast(`Exported ${subscriptions.length} subscriptions as JSON`, "success");
-    } catch (err: any) {
-      addToast("Failed to export JSON: " + err.message, "error");
+    } catch (err) {
+      addToast("Failed to export JSON: " + (err instanceof Error ? err.message : "unknown error"), "error");
     }
   };
 
   const handleExportCsv = () => {
     try {
-      const headers = ["ID", "Name", "Price", "Currency", "Frequency", "Category", "Payment Method", "Status", "Start Date", "Renewal Date"];
-      const rows = subscriptions.map((s) => [
-        s.id,
-        `"${(s.name || "").replace(/"/g, '""')}"`,
-        s.price,
-        s.currency || "USD",
-        s.frequency,
-        s.category,
-        `"${(s.paymentMethod || "").replace(/"/g, '""')}"`,
-        s.status,
-        s.startDate,
-        s.renewalDate || ""
-      ]);
-      const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.setAttribute("download", `bill_pilot_subscriptions_${new Date().toISOString().split("T")[0]}.csv`);
-      document.body.appendChild(anchor);
-      anchor.click();
-      setTimeout(() => {
-        if (document.body.contains(anchor)) {
-          document.body.removeChild(anchor);
-        }
-        URL.revokeObjectURL(url);
-      }, 3000);
+      downloadFile(subscriptionsToCsv(subscriptions), exportFilename("csv"), "text/csv");
       addToast(`Exported ${subscriptions.length} subscriptions as CSV`, "success");
-    } catch (err: any) {
-      addToast("Failed to export CSV: " + err.message, "error");
+    } catch (err) {
+      addToast("Failed to export CSV: " + (err instanceof Error ? err.message : "unknown error"), "error");
     }
   };
 
   const handleCopyJson = async () => {
     try {
-      const jsonContent = JSON.stringify(
-        {
-          app: "Bill Pilot",
-          version: "2.0.0",
-          exportedAt: new Date().toISOString(),
-          subscriptions
-        },
-        null,
-        2
-      );
-      await navigator.clipboard.writeText(jsonContent);
+      await navigator.clipboard.writeText(subscriptionsToJson(subscriptions));
       addToast("Subscriptions JSON copied to clipboard", "success");
-    } catch (err: any) {
-      addToast("Failed to copy JSON: " + err.message, "error");
+    } catch (err) {
+      addToast("Failed to copy JSON: " + (err instanceof Error ? err.message : "clipboard unavailable"), "error");
     }
   };
 
@@ -123,35 +74,45 @@ export default function SettingsPage() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
 
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      addToast("Import file is too large (limit 1 MB)", "error");
+      input.value = "";
+      return;
+    }
+
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
+      let parsed: unknown;
       try {
-        const text = event.target?.result as string;
-        const parsed = JSON.parse(text);
-        const list = Array.isArray(parsed)
-          ? parsed
-          : Array.isArray(parsed.subscriptions)
-          ? parsed.subscriptions
-          : Array.isArray(parsed.data)
-          ? parsed.data
-          : null;
-        if (list && list.length > 0) {
-          importSubs(list);
-        } else if (list && list.length === 0) {
-          addToast("JSON file contains an empty subscriptions list", "error");
-        } else {
-          addToast("Invalid JSON file: subscriptions array not found", "error");
-        }
-      } catch (err: any) {
-        addToast("Error parsing JSON: " + err.message, "error");
+        parsed = JSON.parse(event.target?.result as string);
+      } catch (err) {
+        addToast("Error parsing JSON: " + (err instanceof Error ? err.message : "invalid file"), "error");
+        return;
       }
+      setBusy(true);
+      await importSubs(parsed);
+      setBusy(false);
     };
+    reader.onerror = () => addToast("Could not read the selected file", "error");
     reader.readAsText(file);
-    e.target.value = "";
+    input.value = "";
   };
+
+  const runConfirmed = async () => {
+    const action = confirming;
+    setConfirming(null);
+    setBusy(true);
+    if (action === "clear") await clearAllSubs();
+    if (action === "demo") await resetToDemo();
+    setBusy(false);
+  };
+
+  const secondaryButton =
+    "px-3.5 py-1.5 rounded-md text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
     <div className="flex-1 flex flex-col bg-[#09090b]">
@@ -164,7 +125,7 @@ export default function SettingsPage() {
             System & API Settings
           </h1>
           <p className="text-sm text-zinc-400 mt-0.5">
-            Monitor API connectivity with the Java 25 Spring Boot backend and manage data exports.
+            Monitor API connectivity with the Spring Boot backend and manage data exports.
           </p>
         </div>
 
@@ -176,7 +137,7 @@ export default function SettingsPage() {
                 Spring Boot REST Service
               </h2>
               <p className="text-xs text-zinc-500 font-mono mt-0.5">
-                http://localhost:5500/api/v1
+                {API_ORIGIN}/api/v1
               </p>
             </div>
 
@@ -185,21 +146,22 @@ export default function SettingsPage() {
                 className={`text-xs px-2.5 py-1 rounded-md font-medium border flex items-center gap-1.5 ${
                   isBackendConnected
                     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                    : "bg-rose-500/10 text-rose-400 border-rose-500/20"
                 }`}
               >
                 <span
                   className={`size-1.5 rounded-full ${
-                    isBackendConnected ? "bg-emerald-400" : "bg-zinc-500"
+                    isBackendConnected ? "bg-emerald-400" : "bg-rose-400"
                   }`}
                 />
-                {isBackendConnected ? "Online" : "Standalone"}
+                {isBackendConnected ? "Online" : "Offline"}
               </span>
 
               <button
+                type="button"
                 onClick={handlePingBackend}
                 disabled={testingHealth}
-                className="px-3 py-1 rounded-md text-xs font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors cursor-pointer"
+                className="px-3 py-1 rounded-md text-xs font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
               >
                 {testingHealth ? "Pinging..." : "Check Status"}
               </button>
@@ -217,11 +179,11 @@ export default function SettingsPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-zinc-500">Subscriptions Endpoint:</span>
-              <span className="font-mono text-zinc-300">GET /api/v1/subscriptions</span>
+              <span className="font-mono text-zinc-300">GET /api/v1/subscriptions/user/:id</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-zinc-500">Rate Limiter:</span>
-              <span className="font-mono text-zinc-300">Bucket4j (100 cap / 20 refill)</span>
+              <span className="text-zinc-500">Rate Limiting:</span>
+              <span className="font-mono text-zinc-300">Per-IP token bucket (stricter on sign-in)</span>
             </div>
           </div>
         </div>
@@ -235,14 +197,14 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <div className="p-3 rounded-lg bg-zinc-950/80 border border-zinc-800/60">
               <span className="text-zinc-500 block text-[11px] mb-1">Active User</span>
-              <span className="text-zinc-200 font-medium">{user ? user.name : "Guest Session"}</span>
-              <span className="text-zinc-500 block text-[11px] mt-0.5">{user?.email || "Local demo"}</span>
+              <span className="text-zinc-200 font-medium">{user ? user.name : "Not signed in"}</span>
+              <span className="text-zinc-500 block text-[11px] mt-0.5">{user?.email || "—"}</span>
             </div>
 
             <div className="p-3 rounded-lg bg-zinc-950/80 border border-zinc-800/60">
               <span className="text-zinc-500 block text-[11px] mb-1">JWT Bearer Token</span>
               <span className="text-zinc-300 font-mono text-[11px] truncate block">
-                {token ? `${token.substring(0, 24)}...` : "None"}
+                {token ? `${token.substring(0, 12)}…` : "None"}
               </span>
               <span className="text-zinc-500 block text-[11px] mt-0.5">Algorithm: HMAC-SHA256</span>
             </div>
@@ -256,7 +218,7 @@ export default function SettingsPage() {
               Data Portability & Backup
             </h2>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Export subscriptions as clean JSON, import backups, or restore demo test data.
+              Export subscriptions as clean JSON, import backups (saved to your account), or add sample data.
             </p>
           </div>
 
@@ -265,60 +227,57 @@ export default function SettingsPage() {
             ref={fileInputRef}
             onChange={handleFileChange}
             accept=".json,application/json"
+            aria-label="Import subscriptions from a JSON file"
             className="hidden"
           />
 
           <div className="flex flex-wrap items-center gap-2.5 pt-1">
             <button
+              type="button"
               onClick={handleExportJson}
               className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 transition-colors cursor-pointer flex items-center gap-1.5"
             >
-              <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
               <span>Export JSON ({subscriptions.length})</span>
             </button>
 
-            <button
-              onClick={handleExportCsv}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button type="button" onClick={handleExportCsv} className={secondaryButton}>
+              <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <span>Export CSV</span>
             </button>
 
-            <button
-              onClick={handleCopyJson}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button type="button" onClick={handleCopyJson} className={secondaryButton}>
+              <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
               <span>Copy JSON</span>
             </button>
 
-            <button
-              onClick={handleTriggerImport}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button type="button" onClick={handleTriggerImport} disabled={busy} className={secondaryButton}>
+              <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
-              <span>Import JSON</span>
+              <span>{busy ? "Working…" : "Import JSON"}</span>
             </button>
 
             <button
-              onClick={resetToDemo}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition-colors cursor-pointer"
+              type="button"
+              onClick={() => setConfirming("demo")}
+              disabled={busy}
+              className="px-3.5 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
             >
               Load Demo Presets
             </button>
 
             <button
-              onClick={clearAllSubs}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/20 border border-rose-900/40 hover:border-rose-800 transition-colors cursor-pointer"
+              type="button"
+              onClick={() => setConfirming("clear")}
+              disabled={busy || subscriptions.length === 0}
+              className="px-3.5 py-1.5 rounded-md text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/20 border border-rose-900/40 hover:border-rose-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Clear All Subscriptions
             </button>
@@ -329,6 +288,20 @@ export default function SettingsPage() {
       <SubscriptionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
+      />
+
+      <ConfirmDialog
+        isOpen={confirming !== null}
+        title={confirming === "clear" ? "Delete all subscriptions?" : "Add demo subscriptions?"}
+        message={
+          confirming === "clear"
+            ? `This permanently deletes all ${subscriptions.length} subscriptions from your account. This cannot be undone.`
+            : "This adds a set of sample subscriptions to your account (ones you already track are skipped)."
+        }
+        confirmLabel={confirming === "clear" ? "Delete everything" : "Add demo data"}
+        destructive={confirming === "clear"}
+        onConfirm={runConfirmed}
+        onCancel={() => setConfirming(null)}
       />
     </div>
   );

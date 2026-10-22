@@ -20,10 +20,13 @@ public interface SubscriptionRepository extends MongoRepository<Subscription, St
         if (userId != null && ObjectId.isValid(userId)) {
             return findByUserIdOrObjectId(userId, new ObjectId(userId));
         }
-        return findByUserIdOrObjectId(userId, null);
+        // Owner ids are always ObjectIds; anything else cannot own subscriptions.
+        return List.of();
     }
 
     List<Subscription> findByStatus(SubscriptionStatus status);
+
+    List<Subscription> findByStatusAndRenewalDateBefore(SubscriptionStatus status, LocalDate date);
 
     List<Subscription> findByStatusAndRenewalDate(SubscriptionStatus status, LocalDate renewalDate);
 

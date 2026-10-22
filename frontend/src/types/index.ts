@@ -17,6 +17,7 @@ export interface User {
   name: string;
   email: string;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Subscription {
@@ -89,6 +90,10 @@ export interface AnalyticsData {
   totalMonthlySpend: number;
   totalAnnualSpend: number;
   activeCount: number;
+  /** Currency all monetary figures are expressed in. Subscriptions in other currencies are left out. */
+  currency: string;
+  excludedCurrencies: string[];
+  excludedSubscriptionCount: number;
   fatigueIndex: number;
   fatigueLevel: "OPTIMAL" | "MODERATE" | "ELEVATED" | "BURNOUT" | string;
   fatigueColor: string;

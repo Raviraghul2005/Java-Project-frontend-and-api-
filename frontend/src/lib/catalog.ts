@@ -101,17 +101,6 @@ export const PRESET_SUBSCRIPTIONS: PresetSubscription[] = [
     description: "Original movies, Prime shipping benefits, and digital video rentals."
   },
   {
-    name: "Figma Professional",
-    domain: "figma.com",
-    logo: "/logos/figma.com.png",
-    category: "technology",
-    price: 15.0,
-    currency: "USD",
-    frequency: "monthly",
-    paymentMethod: "Credit Card",
-    description: "Collaborative interface design, team libraries, and dev mode."
-  },
-  {
     name: "Notion Plus",
     domain: "notion.so",
     logo: "/logos/notion.so.png",
@@ -234,37 +223,41 @@ export const PRESET_SUBSCRIPTIONS: PresetSubscription[] = [
   }
 ];
 
+/** Brand keywords -> logo. Matched as whole words so "Password Manager" is not mistaken for 1Password. */
+const LOGO_KEYWORDS: [RegExp, string][] = [
+  [/\bnetflix\b/, "/logos/netflix.com.png"],
+  [/\bspotify\b/, "/logos/spotify.com.png"],
+  [/\b(claude|anthropic)\b/, "/logos/claude.ai.png"],
+  [/\b(chatgpt|openai)\b/, "/logos/openai.com.png"],
+  [/\bgithub\b/, "/logos/github.com.png"],
+  [/\byoutube\b/, "/logos/youtube.com.png"],
+  [/\bdisney\b/, "/logos/disneyplus.com.png"],
+  [/\b(prime|amazon)\b/, "/logos/primevideo.com.png"],
+  [/\badobe\b/, "/logos/adobe.com.png"],
+  [/\bfigma\b/, "/logos/figma.com.png"],
+  [/\bnotion\b/, "/logos/notion.so.png"],
+  [/\bdiscord\b/, "/logos/discord.com.png"],
+  [/\bxbox\b/, "/logos/xbox.com.png"],
+  [/\bslack\b/, "/logos/slack.com.png"],
+  [/\bmedium\b/, "/logos/medium.com.png"],
+  [/\bduolingo\b/, "/logos/duolingo.com.png"],
+  [/\b1password\b/, "/logos/1password.com.png"],
+  [/\bcanva\b/, "/logos/canva.com.png"]
+];
+
 export function findLogoForSubscription(name: string): string | null {
-  if (!name) return null;
-  const clean = name.toLowerCase().trim();
+  const clean = (name || "").toLowerCase().trim();
+  if (clean.length < 3) return null;
 
-  for (const preset of PRESET_SUBSCRIPTIONS) {
-    const pName = preset.name.toLowerCase();
-    if (clean.includes(pName) || pName.includes(clean)) {
-      return preset.logo;
-    }
+  // Exact preset name first, then a preset name contained in the (longer) subscription name.
+  const exact = PRESET_SUBSCRIPTIONS.find((preset) => preset.name.toLowerCase() === clean);
+  if (exact) return exact.logo;
+  const contained = PRESET_SUBSCRIPTIONS.find((preset) => clean.includes(preset.name.toLowerCase()));
+  if (contained) return contained.logo;
+
+  for (const [pattern, logo] of LOGO_KEYWORDS) {
+    if (pattern.test(clean)) return logo;
   }
-
-  // Fallback checks
-  if (clean.includes("netflix")) return "/logos/netflix.com.png";
-  if (clean.includes("spotify")) return "/logos/spotify.com.png";
-  if (clean.includes("claude") || clean.includes("anthropic")) return "/logos/claude.ai.png";
-  if (clean.includes("chatgpt") || clean.includes("openai")) return "/logos/openai.com.png";
-  if (clean.includes("github")) return "/logos/github.com.png";
-  if (clean.includes("youtube")) return "/logos/youtube.com.png";
-  if (clean.includes("disney")) return "/logos/disneyplus.com.png";
-  if (clean.includes("prime") || clean.includes("amazon")) return "/logos/primevideo.com.png";
-  if (clean.includes("adobe")) return "/logos/adobe.com.png";
-  if (clean.includes("figma")) return "/logos/figma.com.png";
-  if (clean.includes("notion")) return "/logos/notion.so.png";
-  if (clean.includes("discord")) return "/logos/discord.com.png";
-  if (clean.includes("xbox")) return "/logos/xbox.com.png";
-  if (clean.includes("slack")) return "/logos/slack.com.png";
-  if (clean.includes("medium")) return "/logos/medium.com.png";
-  if (clean.includes("duolingo")) return "/logos/duolingo.com.png";
-  if (clean.includes("1password") || clean.includes("password")) return "/logos/1password.com.png";
-  if (clean.includes("canva")) return "/logos/canva.com.png";
-
   return null;
 }
 
