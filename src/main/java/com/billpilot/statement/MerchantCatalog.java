@@ -39,7 +39,7 @@ public final class MerchantCatalog {
             new Merchant("Microsoft 365", Category.TECHNOLOGY, List.of("microsoft 365", "office 365", "microsoft")),
             new Merchant("1Password", Category.TECHNOLOGY, List.of("1password")),
             new Merchant("Grammarly", Category.TECHNOLOGY, List.of("grammarly")),
-            new Merchant("iCloud", Category.TECHNOLOGY, List.of("icloud", "apple com bill")),
+            new Merchant("iCloud", Category.TECHNOLOGY, List.of("icloud")),
             new Merchant("Duolingo", Category.LIFESTYLE, List.of("duolingo")),
             new Merchant("Coursera", Category.LIFESTYLE, List.of("coursera")),
             new Merchant("Medium", Category.NEWS, List.of("medium")),

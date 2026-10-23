@@ -23,6 +23,15 @@ class MerchantNormalizerTest {
     }
 
     @Test
+    void sharedBillersCollapseToAnAggregatorKeyUnlessAMerchantMatches() {
+        assertEquals("apple", MerchantNormalizer.key("APPLE.COM/BILL 866-712-7753"));
+        assertEquals("amazon", MerchantNormalizer.key("AMZN MKTP US*2K4"));
+        assertEquals("amazon", MerchantNormalizer.key("AMZN MKTP US*7Q1"));
+        assertEquals("spotify", MerchantNormalizer.key("PAYPAL *SPOTIFY"));
+        assertEquals("prime video", MerchantNormalizer.key("AMAZON PRIME*MEMBERSHIP"));
+    }
+
+    @Test
     void unknownMerchantsUseFirstTwoMeaningfulTokens() {
         assertEquals("gym fit", MerchantNormalizer.key("GYM FIT24 PVT LTD 8812"));
         assertEquals("fitclub", MerchantNormalizer.key("FITCLUB 99812 PVT LTD"));

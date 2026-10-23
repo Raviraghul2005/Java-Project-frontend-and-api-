@@ -1,6 +1,7 @@
 package com.billpilot.statement;
 
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -35,14 +36,23 @@ public final class MerchantNormalizer {
     }
 
     /**
-     * Grouping key for a description. Known merchants collapse to their catalog name,
-     * unknown ones to the first two meaningful tokens.
+     * Grouping key for a description. Known merchants collapse to their catalog name, shared billers
+     * (Apple, PayPal, ...) to their aggregator key, unknown ones to the first two meaningful tokens.
      */
     public static String key(String description) {
         String cleaned = clean(description);
         if (cleaned.isEmpty()) return "";
-        return MerchantCatalog.find(cleaned)
-                .map(m -> m.name().toLowerCase())
+        Optional<MerchantCatalog.Merchant> merchant = MerchantCatalog.find(cleaned);
+        if (merchant.isPresent()) return merchant.get().name().toLowerCase();
+        return AggregatorCatalog.find(cleaned)
+                .map(AggregatorCatalog.Aggregator::key)
                 .orElseGet(() -> Arrays.stream(cleaned.split(" ")).limit(2).collect(Collectors.joining(" ")));
+    }
+
+    /** The shared biller behind a description; empty when a known merchant matched first or none matches. */
+    public static Optional<AggregatorCatalog.Aggregator> aggregator(String description) {
+        String cleaned = clean(description);
+        if (cleaned.isEmpty() || MerchantCatalog.find(cleaned).isPresent()) return Optional.empty();
+        return AggregatorCatalog.find(cleaned);
     }
 }
