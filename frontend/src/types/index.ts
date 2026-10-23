@@ -129,12 +129,38 @@ export interface DetectedSubscription {
   occurrences: number;
   firstSeen: string;
   lastSeen: string;
-  nextExpected: string;
+  /** Null when the stream looks stopped. */
+  nextExpected: string | null;
   confidence: number;
   knownMerchant: boolean;
   previousAmount?: number | null;
   alreadyTracked: boolean;
   evidence: string;
+  /** Unique per detection, unlike merchantKey (one merchant or shared descriptor can hold several streams). */
+  streamId: string;
+  /** Label of the shared biller ("Apple") the charges were found under, null for ordinary merchants. */
+  sharedDescriptor?: string | null;
+  /** Billing day of the month. */
+  anchorDay: number;
+  /** How many of its charges were part of a grouped debit. */
+  groupedCharges: number;
+  status: "active" | "overdue" | "stopped";
+  priceChangedOn?: string | null;
+  /** Name of the tracked subscription this matched, when alreadyTracked. */
+  trackedName?: string | null;
+  charges: { date: string; amount: number; grouped: boolean }[];
+}
+
+export interface SharedDescriptorSummary {
+  key: string;
+  label: string;
+  /** Statement text of the first charge without reference numbers, e.g. "APPLE.COM/BILL". */
+  descriptor: string;
+  chargeCount: number;
+  subscriptionCount: number;
+  oneOffCount: number;
+  oneOffTotal: number;
+  oneOffs: { date: string; description: string; amount: number }[];
 }
 
 export interface StatementAnalysis {
@@ -143,4 +169,5 @@ export interface StatementAnalysis {
   untrackedCount: number;
   detectedMonthlyTotal: number;
   untrackedMonthlyTotal: number;
+  sharedDescriptors: SharedDescriptorSummary[];
 }
