@@ -45,6 +45,45 @@ A sample file is in `frontend/public/sample-statement.csv`.
 
 ---
 
+## 🧩 Shared-descriptor separation
+
+**The problem.** Some statement descriptors are shared by many subscriptions: `APPLE.COM/BILL`, Google Play, PayPal, `AMZN MKTP`. The scanner above groups charges by merchant and decides one cadence per group, so when several subscriptions sit under one descriptor their gaps are mixed and it finds nothing. Three things make it harder: the subscriptions interleave on different days (sometimes at the same price), a biller may add several renewals into one **grouped debit** (2.99 + 10.99 shows up as a single 13.98), and **one-off purchases** are mixed in with the subscriptions.
+
+**How it works** (`StreamSeparator`, plain rules, no machine learning). Shared billers come from `AggregatorCatalog` and go through the separator. Other merchants keep the result of the rules above, except that a merchant with four or more charges is also tried, so one merchant with two plans (two gym memberships, say) is split in two. A descriptor with more than 400 charges on one statement skips the separator and uses the plain rules, because the separator's running time grows quickly with the number of charges.
+
+1. **Propose schedules.** Any two charges with the same amount that sit one to three billing periods apart suggest a calendar schedule: weekly, monthly (same day of the month) or yearly.
+2. **Pick the schedules the charges really follow.** Each billing date claims the nearest charge within 3 days that has the same amount. A schedule whose amount is just the sum of two or three smaller schedules due on the same days is a grouped debit, not a subscription, and is skipped. The best schedule is accepted, its charges are used up, and the search repeats on what is left.
+3. **Join price changes.** Two schedules that follow each other on the same days at a nearby price (within 50%), or a run of equal charges that continues a schedule at a new price, are one subscription whose price changed.
+4. **Explain grouped debits.** A leftover charge that equals, within half a percent, the sum of two or more subscriptions due within 3 days of it is split between them. Inside a subscription's active period, a missing payment may also be found inside a larger nearby charge.
+5. **Report status.** A subscription whose last two billing dates passed with no charge is reported as stopped; one missing date is reported as overdue.
+
+Whatever no subscription explains is listed as a one-off purchase. On `/scan`, each shared descriptor gets its own block showing the subscriptions found, a month-by-month strip of when each was charged, and how many one-offs were left out. Stopped subscriptions are left out of the monthly totals.
+
+**Benchmark.** `SeparationBenchmark` generates seeded synthetic statements (2000 per scenario) with known subscriptions and scores three methods: **B0** the plain scanner's rules (one stream per descriptor), **B1** grouping by amount and then the same cadence rules, and **SP** the separator. A true subscription counts as found when a detection has the same cadence, a price within 1% and a billing day within 3 days. Cells are recall / precision.
+
+| Scenario | B0 current detector | B1 amount grouping | SP separator |
+|---|---|---|---|
+| S0 single stream (control) | 1.000 / 1.000 | 1.000 / 1.000 | 1.000 / 1.000 |
+| S1 interleaved, distinct prices | 0.001 / 1.000 | 1.000 / 1.000 | 1.000 / 1.000 |
+| S2 interleaved, equal prices | 0.005 / 1.000 | 0.005 / 1.000 | 0.999 / 0.999 |
+| S3 grouped debits | 0.000 / 0.000 | 0.603 / 0.913 | 0.966 / 0.961 |
+| S4 one-off purchases mixed in | 0.000 / 0.000 | 0.920 / 0.959 | 1.000 / 0.987 |
+| S5 price changes, stops, misses | 0.006 / 1.000 | 0.963 / 0.786 | 0.992 / 0.991 |
+| S6 realistic mix | 0.000 / 0.000 | 0.634 / 0.896 | 0.979 / 0.959 |
+
+Synthetic statements; not yet measured on real users' data.
+
+Reproduce it (the run is seeded, so every number matches; only the timing varies). On Windows use `;` instead of `:` in the classpath:
+
+```bash
+mvn test-compile
+java -cp target/classes:target/test-classes com.billpilot.statement.SeparationBenchmark 2000
+```
+
+A sample with shared descriptors is in `frontend/public/sample-statement-shared.csv`.
+
+---
+
 ## 🔬 Analytics: Subscription Intelligence Engine
 
 Once subscriptions are tracked, Bill Pilot audits them.
@@ -123,7 +162,8 @@ bill-pilot/
 │   │   ├── repository/                         # Spring Data Repositories
 │   │   ├── security/                           # JwtAuthenticationFilter & JwtService
 │   │   ├── statement/                          # Statement scanner: StatementParser, MerchantNormalizer,
-│   │   │                                       #   MerchantCatalog, RecurringDetector
+│   │   │                                       #   MerchantCatalog, AggregatorCatalog, RecurringDetector,
+│   │   │                                       #   StreamSeparator (shared-descriptor separation)
 │   │   └── service/
 │   │       ├── AnalyticsService.java           # SFI & Redundancy Engine
 │   │       ├── AuthService.java
@@ -222,7 +262,7 @@ Sign-in and sign-up are rate limited, so wait about a minute between runs.
 - `GET /api/v1/analytics/audit` — Computes Subscription Fatigue Index (SFI), Redundancy Matrix, Vampire Drain projections, and 30-day renewal collisions.
 
 ### Statements (`/api/v1/statements`)
-- `POST /api/v1/statements/analyze` — Multipart upload (`file`, `.csv`, max 2 MB). Returns detected recurring charges with confidence, next expected date, price-change and already-tracked flags. The file is not stored.
+- `POST /api/v1/statements/analyze` — Multipart upload (`file`, `.csv`, max 2 MB). Returns detected recurring charges with confidence, next expected date, price-change and already-tracked flags, plus `sharedDescriptors`: one summary per shared descriptor (Apple, PayPal, ...) with the subscriptions found under it and the one-off purchases left out. Each detection has a `streamId`, a `status` (`active`, `overdue` or `stopped`) and the charges it was built from. The file is not stored.
 
 ### Authentication (`/api/v1/auth`)
 - `POST /api/v1/auth/sign-up` — Register user & issue JWT
