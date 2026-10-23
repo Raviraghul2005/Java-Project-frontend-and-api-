@@ -48,7 +48,8 @@ interface StreamRowProps {
 function StreamRow({ d, name, onName, span, currency, added, adding, busy, onAdd }: StreamRowProps) {
   const stopped = d.status === "stopped";
   const canAdd = !d.alreadyTracked && !stopped;
-  const nameId = `stream-name-${d.streamId}`;
+  // streamId holds spaces, "#" and "." ("google play#MONTHLY#14#2.99"), which don't belong in an element id.
+  const nameId = `stream-name-${d.streamId.replace(/[^A-Za-z0-9_-]/g, "-")}`;
   return (
     <li className="py-4 first:pt-0 last:pb-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
       <div className="min-w-0 space-y-2 flex-1">
