@@ -5,6 +5,8 @@
 //   npm run e2e:api
 // The users it creates delete themselves (and their subscriptions) at the end.
 // Sign-in/sign-up are throttled (10-request burst, 5 per minute per IP), so wait about a minute between runs.
+import { readFile } from "node:fs/promises";
+
 const BASE = process.env.BASE || "http://localhost:5501";
 const stamp = Date.now();
 const emailA = `e2e-a-${stamp}@example.com`;
@@ -131,6 +133,13 @@ form.append("file", new Blob([csvBody], { type: "text/csv" }), "s.csv");
 const scanRes = await fetch(BASE + "/api/v1/statements/analyze", { method: "POST", headers: { Authorization: `Bearer ${tokenA}` }, body: form });
 const scan = await scanRes.json();
 check("statement scan detects a monthly Netflix charge", scanRes.status === 200 && scan.data?.detected?.[0]?.name === "Netflix" && scan.data.detected[0].frequency === "monthly", JSON.stringify(scan).slice(0, 200));
+// several Apple subscriptions hide under one descriptor in this sample; they must come back as separate streams
+const sharedForm = new FormData();
+sharedForm.append("file", new Blob([await readFile(new URL("../public/sample-statement-shared.csv", import.meta.url))], { type: "text/csv" }), "sample-statement-shared.csv");
+const sharedRes = await fetch(BASE + "/api/v1/statements/analyze", { method: "POST", headers: { Authorization: `Bearer ${tokenA}` }, body: sharedForm });
+const shared = await sharedRes.json();
+const appleStreams = (shared.data?.detected ?? []).filter((d) => d.sharedDescriptor === "Apple");
+check("shared-descriptor statement splits Apple into at least 3 subscriptions", sharedRes.status === 200 && appleStreams.length >= 3, JSON.stringify(shared).slice(0, 200));
 const scanNoAuth = await fetch(BASE + "/api/v1/statements/analyze", { method: "POST", body: form });
 check("statement scan requires authentication -> 401", scanNoAuth.status === 401, String(scanNoAuth.status));
 const bigForm = new FormData();

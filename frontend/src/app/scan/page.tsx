@@ -2,16 +2,158 @@
 
 import React, { useRef, useState } from "react";
 import Link from "next/link";
+import { CadenceStrip } from "@/components/CadenceStrip";
 import { Navbar } from "@/components/Navbar";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { useApp } from "@/context/AppContext";
 import { api } from "@/lib/api";
+import { monthSpan } from "@/lib/cadenceStrip";
 import { formatMoney } from "@/lib/money";
-import { DetectedSubscription, StatementAnalysis } from "@/types";
+import { DetectedSubscription, SharedDescriptorSummary, StatementAnalysis } from "@/types";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 // A statement CSV carries no currency, so the user says which one it is in (used for display and when adding).
 const CURRENCIES = ["USD", "EUR", "GBP", "INR", "CAD", "AUD"];
+const MAX_NAME_LENGTH = 100;
+
+interface Span {
+  firstMonth: string;
+  lastMonth: string;
+}
+
+/** "stopped" (no charge for two billing dates) or "overdue" (one missing); nothing for an active subscription. */
+function StatusBadge({ status }: { status: DetectedSubscription["status"] }) {
+  if (status === "stopped") {
+    return <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">stopped</span>;
+  }
+  if (status === "overdue") {
+    return <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300">overdue</span>;
+  }
+  return null;
+}
+
+interface StreamRowProps {
+  d: DetectedSubscription;
+  name: string;
+  onName: (name: string) => void;
+  span: Span | null;
+  currency: string;
+  added: boolean;
+  adding: boolean;
+  busy: boolean;
+  onAdd: () => void;
+}
+
+/** One subscription found under a shared descriptor: editable name, month-by-month strip, badges. */
+function StreamRow({ d, name, onName, span, currency, added, adding, busy, onAdd }: StreamRowProps) {
+  const stopped = d.status === "stopped";
+  const canAdd = !d.alreadyTracked && !stopped;
+  const nameId = `stream-name-${d.streamId}`;
+  return (
+    <li className="py-4 first:pt-0 last:pb-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="min-w-0 space-y-2 flex-1">
+        <label htmlFor={nameId} className="sr-only">
+          Name for {d.name}
+        </label>
+        <input
+          id={nameId}
+          type="text"
+          value={name}
+          maxLength={MAX_NAME_LENGTH}
+          onChange={(e) => onName(e.target.value)}
+          className="w-full max-w-md px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 text-sm font-medium focus:outline-none focus:border-zinc-600"
+        />
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">{d.frequency}</span>
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">{d.confidence}% confidence</span>
+          {d.groupedCharges > 0 && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">grouped ×{d.groupedCharges}</span>
+          )}
+          {d.previousAmount != null && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300">
+              price changed from {formatMoney(d.previousAmount, currency)}
+              {d.priceChangedOn ? ` on ${d.priceChangedOn}` : ""}
+            </span>
+          )}
+          <StatusBadge status={d.status} />
+          {d.alreadyTracked && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300">
+              already tracked{d.trackedName ? ` as ${d.trackedName}` : ""}
+            </span>
+          )}
+        </div>
+        {span && <CadenceStrip charges={d.charges ?? []} firstMonth={span.firstMonth} lastMonth={span.lastMonth} />}
+        <p className="text-xs text-zinc-400">
+          {formatMoney(d.amount, currency)} · {d.nextExpected ? `next expected ${d.nextExpected}` : "no longer charged"} · {d.evidence}
+        </p>
+      </div>
+
+      {canAdd && (
+        <button
+          type="button"
+          aria-label={`Add ${name.trim() || d.name} to tracker`}
+          onClick={onAdd}
+          disabled={added || busy || name.trim().length < 2}
+          className="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 disabled:opacity-40 transition-colors cursor-pointer"
+        >
+          {added ? "Added" : adding ? "Adding…" : "Add to tracker"}
+        </button>
+      )}
+    </li>
+  );
+}
+
+interface SharedBlockProps {
+  summary: SharedDescriptorSummary;
+  streams: DetectedSubscription[];
+  names: Record<string, string>;
+  setNames: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  span: Span | null;
+  currency: string;
+  added: Set<string>;
+  adding: string | null;
+  onAdd: (d: DetectedSubscription, name: string) => void;
+}
+
+/** Everything found under one shared descriptor (Apple, PayPal, ...). */
+function SharedBlock({ summary, streams, names, setNames, span, currency, added, adding, onAdd }: SharedBlockProps) {
+  const n = streams.length;
+  // "APPLE.COM/BILL (Apple)"; just the descriptor when the label adds nothing.
+  const title =
+    !summary.descriptor || summary.descriptor.toLowerCase() === summary.label.toLowerCase()
+      ? summary.label
+      : `${summary.descriptor} (${summary.label})`;
+  const nameOf = (d: DetectedSubscription) => names[d.streamId] ?? d.trackedName ?? d.name;
+  return (
+    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-5">
+      <h2 className="text-base font-semibold text-zinc-100">
+        {title} hides {n} {n === 1 ? "subscription" : "subscriptions"}
+      </h2>
+      {summary.oneOffCount > 0 && (
+        <p className="text-xs text-zinc-500 mt-0.5">
+          {summary.oneOffCount} one-off {summary.oneOffCount === 1 ? "purchase" : "purchases"} (total{" "}
+          {formatMoney(summary.oneOffTotal, currency)}) {summary.oneOffCount === 1 ? "was" : "were"} left out
+        </p>
+      )}
+      <ul className="mt-4 divide-y divide-zinc-800/80">
+        {streams.map((d) => (
+          <StreamRow
+            key={d.streamId}
+            d={d}
+            name={nameOf(d)}
+            onName={(name) => setNames((prev) => ({ ...prev, [d.streamId]: name }))}
+            span={span}
+            currency={currency}
+            added={added.has(d.streamId)}
+            adding={adding === d.streamId}
+            busy={adding !== null}
+            onAdd={() => onAdd(d, nameOf(d).trim())}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export default function ScanPage() {
   const { user, isBackendConnected, createSub, addToast } = useApp();
@@ -23,14 +165,33 @@ export default function ScanPage() {
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [currency, setCurrency] = useState("USD");
   const [adding, setAdding] = useState<string | null>(null);
+  // Names the user edited for streams found under a shared descriptor, by streamId.
+  const [names, setNames] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLInputElement>(null);
 
   const canScan = Boolean(user) && isBackendConnected;
+
+  // Streams under a shared descriptor get a block each, above the ordinary list.
+  // (`?? []` keeps the page working against a backend that predates these fields.)
+  const detected = result?.detected ?? [];
+  const sharedSummaries = result?.sharedDescriptors ?? [];
+  const sharedBlocks = sharedSummaries
+    .map((summary) => ({ summary, streams: detected.filter((d) => d.sharedDescriptor === summary.label) }))
+    .filter((b) => b.streams.length > 0);
+  const ordinary = detected.filter((d) => !d.sharedDescriptor);
+  // Every strip covers the same months: the span of the whole scan, at most the latest 12.
+  const span = result
+    ? monthSpan([
+        ...detected.flatMap((d) => (d.charges ?? []).map((c) => c.date)),
+        ...sharedSummaries.flatMap((s) => (s.oneOffs ?? []).map((o) => o.date))
+      ])
+    : null;
 
   const pickFile = (f: File | null) => {
     setError(null);
     setResult(null);
     setAdded(new Set());
+    setNames({});
     if (!f) return setFile(null);
     if (!f.name.toLowerCase().endsWith(".csv")) {
       setFile(null);
@@ -56,22 +217,22 @@ export default function ScanPage() {
     }
   };
 
-  const addToTracker = async (d: DetectedSubscription) => {
+  const addToTracker = async (d: DetectedSubscription, name: string = d.name) => {
     if (adding) return;
-    setAdding(d.merchantKey);
+    setAdding(d.streamId);
     const ok = await createSub({
-      name: d.name,
+      name,
       price: d.amount,
       currency,
       frequency: d.frequency,
       category: d.category,
       paymentMethod: "From bank statement",
       startDate: d.firstSeen,
-      renewalDate: d.nextExpected
+      renewalDate: d.nextExpected ?? undefined
     });
     setAdding(null);
     if (ok) {
-      setAdded((prev) => new Set(prev).add(d.merchantKey));
+      setAdded((prev) => new Set(prev).add(d.streamId));
       // Re-run so the totals and "already tracked" flags reflect the new subscription.
       if (file) {
         try {
@@ -146,6 +307,14 @@ export default function ScanPage() {
             >
               Download a sample statement
             </a>
+            {" · "}
+            <a
+              href="/sample-statement-shared.csv"
+              download
+              className="underline underline-offset-2 hover:text-zinc-300"
+            >
+              Download a sample with shared descriptors
+            </a>
           </p>
 
           <div className="flex items-center gap-2">
@@ -200,10 +369,25 @@ export default function ScanPage() {
               <p className="text-xs text-zinc-500 mt-1">{result.transactionsScanned} transactions scanned</p>
             </div>
 
+            {sharedBlocks.map(({ summary, streams }) => (
+              <SharedBlock
+                key={summary.key}
+                summary={summary}
+                streams={streams}
+                names={names}
+                setNames={setNames}
+                span={span}
+                currency={currency}
+                added={added}
+                adding={adding}
+                onAdd={addToTracker}
+              />
+            ))}
+
             <ul className="space-y-3">
-              {result.detected.map((d) => (
+              {ordinary.map((d) => (
                 <li
-                  key={d.merchantKey}
+                  key={d.streamId}
                   className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                 >
                   <div className="min-w-0">
@@ -223,21 +407,22 @@ export default function ScanPage() {
                           price changed from {formatMoney(d.previousAmount, currency)}
                         </span>
                       )}
+                      <StatusBadge status={d.status} />
                     </div>
                     <p className="text-xs text-zinc-400 mt-1">
-                      {formatMoney(d.amount, currency)} · next expected {d.nextExpected} · {d.evidence}
+                      {formatMoney(d.amount, currency)} · {d.nextExpected ? `next expected ${d.nextExpected}` : "no longer charged"} · {d.evidence}
                     </p>
                   </div>
 
-                  {!d.alreadyTracked && (
+                  {!d.alreadyTracked && d.status !== "stopped" && (
                     <button
                       type="button"
                       aria-label={`Add ${d.name} to tracker`}
                       onClick={() => addToTracker(d)}
-                      disabled={added.has(d.merchantKey) || adding !== null}
+                      disabled={added.has(d.streamId) || adding !== null}
                       className="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 disabled:opacity-40 transition-colors cursor-pointer"
                     >
-                      {added.has(d.merchantKey) ? "Added" : adding === d.merchantKey ? "Adding…" : "Add to tracker"}
+                      {added.has(d.streamId) ? "Added" : adding === d.streamId ? "Adding…" : "Add to tracker"}
                     </button>
                   )}
                 </li>

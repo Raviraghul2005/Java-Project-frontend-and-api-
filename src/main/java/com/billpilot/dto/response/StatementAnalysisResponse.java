@@ -1,5 +1,6 @@
 package com.billpilot.dto.response;
 
+import com.billpilot.statement.SharedDescriptorSummary;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,4 +18,6 @@ public class StatementAnalysisResponse {
     private int untrackedCount;
     private double detectedMonthlyTotal;
     private double untrackedMonthlyTotal;
+    /** One entry per shared descriptor (Apple, PayPal, ...) found on the statement. */
+    private List<SharedDescriptorSummary> sharedDescriptors;
 }
