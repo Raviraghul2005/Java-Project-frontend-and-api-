@@ -11,10 +11,12 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -130,7 +132,22 @@ public class RecurringDetector {
         }
         result.sort(Comparator.comparingInt(DetectedSubscription::getConfidence).reversed()
                 .thenComparing(Comparator.comparingDouble(DetectedSubscription::getMonthlyAmount).reversed()));
+        makeStreamIdsUnique(result);
         return new Detection(result, summaries);
+    }
+
+    /**
+     * Two subscriptions with the same price on the same billing day (two identical plans) get the same id from
+     * {@link #fromStream}; the later ones become "...#2", "...#3" so every id is unique in the response.
+     */
+    private static void makeStreamIdsUnique(List<DetectedSubscription> detections) {
+        Set<String> seen = new HashSet<>();
+        for (DetectedSubscription d : detections) {
+            String id = d.getStreamId();
+            String unique = id;
+            for (int n = 2; !seen.add(unique); n++) unique = id + "#" + n;
+            d.setStreamId(unique);
+        }
     }
 
     private static SharedDescriptorSummary summary(String key, String label, List<Transaction> group, StreamSeparator.Result r) {

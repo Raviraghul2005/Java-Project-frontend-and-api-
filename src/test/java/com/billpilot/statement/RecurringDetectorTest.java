@@ -315,6 +315,39 @@ class RecurringDetectorTest {
     }
 
     @Test
+    void twoIdenticalStreamsGetDistinctStreamIds() {
+        // two separate subscriptions, same price, same billing day, both billed as APPLE.COM/BILL
+        List<Transaction> txns = new ArrayList<>();
+        for (int m = 1; m <= 6; m++) {
+            txns.add(new Transaction(LocalDate.of(2026, m, 14), "APPLE.COM/BILL 866-712-7753", 2.99));
+            txns.add(new Transaction(LocalDate.of(2026, m, 14), "APPLE.COM/BILL 866-712-7753", 2.99));
+        }
+
+        List<DetectedSubscription> out = detector.detect(txns);
+
+        assertEquals(2, out.size());
+        assertEquals(List.of("apple#MONTHLY#14#2.99", "apple#MONTHLY#14#2.99#2"),
+                out.stream().map(DetectedSubscription::getStreamId).sorted().toList());
+        assertTrue(out.stream().allMatch(d -> d.getAmount() == 2.99 && d.getAnchorDay() == 14 && d.getOccurrences() == 6));
+    }
+
+    @Test
+    void streamIdsStayUniqueWhenThereAreThreeIdenticalStreams() {
+        List<Transaction> txns = new ArrayList<>();
+        for (int m = 1; m <= 6; m++) {
+            for (int copy = 0; copy < 3; copy++) {
+                txns.add(new Transaction(LocalDate.of(2026, m, 14), "APPLE.COM/BILL 866-712-7753", 2.99));
+            }
+        }
+
+        List<DetectedSubscription> out = detector.detect(txns);
+
+        assertEquals(3, out.size());
+        assertEquals(Set.of("apple#MONTHLY#14#2.99", "apple#MONTHLY#14#2.99#2", "apple#MONTHLY#14#2.99#3"),
+                out.stream().map(DetectedSubscription::getStreamId).collect(Collectors.toSet()));
+    }
+
+    @Test
     void aDescriptorWithTooManyChargesFallsBackToThePlainRules() {
         List<Transaction> flood = new ArrayList<>();
         LocalDate day = LocalDate.parse("2025-01-01");

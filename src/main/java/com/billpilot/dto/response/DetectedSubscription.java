@@ -35,7 +35,7 @@ public class DetectedSubscription {
     private boolean alreadyTracked;
     /** Human-readable explanation of why this was flagged. */
     private String evidence;
-    /** Unique per detection: merchantKey#frequency#anchorDay#amount. */
+    /** Unique per detection: merchantKey#frequency#anchorDay#amount, plus "#2", "#3" ... for a repeat of the same id. */
     private String streamId;
     /** Label of the shared biller ("Apple") the charges were found under, null for ordinary merchants. */
     private String sharedDescriptor;
