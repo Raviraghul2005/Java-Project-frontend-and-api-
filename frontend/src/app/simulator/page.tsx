@@ -1,18 +1,29 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Navbar } from "@/components/Navbar";
-import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { CheckIcon, SparklesIcon, XIcon } from "@/components/ui/icons";
+import { RingGauge } from "@/components/ui/RingGauge";
+import { SubLogo } from "@/components/ui/SubLogo";
 import { useApp } from "@/context/AppContext";
+import { categoryColor } from "@/lib/categoryColors";
+import { cn } from "@/lib/cn";
 import { daysUntil } from "@/lib/dates";
 import { formatMoney, primaryCurrency, toMonthly } from "@/lib/money";
 
 const ANNUAL_PLAN_DISCOUNT = 0.18; // assumed saving when switching a monthly plan to annual billing
 const OPPORTUNITY_FACTOR_5YR = 71.5929; // FV of 60 monthly deposits at 7% APR
 
+/** Ring colour for a projected fatigue score. */
+function fatigueColor(score: number): string {
+  if (score <= 30) return "#2fd88a";
+  if (score <= 60) return "#fbbf24";
+  if (score <= 80) return "#fb923c";
+  return "#f43f5e";
+}
+
 export default function SimulatorPage() {
   const { subscriptions } = useApp();
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Simulation state: Set of paused subscription IDs
   const [pausedIds, setPausedIds] = useState<Set<string>>(new Set());
@@ -156,191 +167,186 @@ export default function SimulatorPage() {
     setAnnualizedIds(new Set());
   };
 
+  const money = (amount: number) => formatMoney(amount, currency);
+  const keptShare = baseMonthly > 0 ? Math.min(100, (simulated.simMonthly / baseMonthly) * 100) : 100;
+  const sfiColor = fatigueColor(simulated.simSFI);
+
   return (
-    <div className="flex-1 flex flex-col bg-[#09090b]">
-      <Navbar onOpenNewModal={() => setIsModalOpen(true)} />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-7">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-              Arbitrage Simulator
-            </h1>
-            <p className="text-sm text-zinc-400 mt-0.5">
-              Simulate pruning redundant domain commitments and converting monthly plans to discounted annual cycles
-              (assumes an {Math.round(ANNUAL_PLAN_DISCOUNT * 100)}% annual-plan discount).
+    <div className="page-enter space-y-7 pt-2">
+      {/* Header */}
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
+            <span className="text-gradient">Arbitrage Simulator</span>
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+            Simulate pruning redundant domain commitments and converting monthly plans to discounted annual cycles
+            (assumes an {Math.round(ANNUAL_PLAN_DISCOUNT * 100)}% annual-plan discount).
+          </p>
+          {excludedCount > 0 && (
+            <p className="mt-1.5 text-xs text-amber-400/90">
+              Showing {currency} plans only; {excludedCount} active plan{excludedCount === 1 ? "" : "s"} in other currencies {excludedCount === 1 ? "is" : "are"} excluded.
             </p>
-            {excludedCount > 0 && (
-              <p className="text-xs text-amber-400/90 mt-1">
-                Showing {currency} plans only; {excludedCount} active plan{excludedCount === 1 ? "" : "s"} in other currencies {excludedCount === 1 ? "is" : "are"} excluded.
-              </p>
-            )}
-          </div>
+          )}
+        </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={applyOptimalArbitrage}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-100 text-zinc-950 hover:bg-white transition-colors cursor-pointer"
-            >
-              Auto-Optimize Stack
-            </button>
-            <button
-              type="button"
-              onClick={resetSimulation}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-900 border border-zinc-800 transition-colors cursor-pointer"
-            >
-              Reset
-            </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={applyOptimalArbitrage} className="btn-primary">
+            <SparklesIcon className="size-4" />
+            Auto-Optimize Stack
+          </button>
+          <button type="button" onClick={resetSimulation} className="btn-ghost h-[2.4rem]">
+            Reset
+          </button>
+        </div>
+      </header>
+
+      {/* Real-time KPI Tiles */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="spotlight surface lift reveal p-5" style={{ "--i": 0 } as React.CSSProperties}>
+          <span className="block text-[13px] font-semibold text-zinc-400">Simulated Monthly Spend</span>
+          <div className="tabular mt-3 text-[1.9rem] font-extrabold leading-none tracking-tight text-zinc-50">
+            <AnimatedNumber value={simulated.simMonthly} format={money} duration={800} />
+          </div>
+          <div className="tabular mt-2 text-xs text-zinc-500">Base: {money(baseMonthly)}/mo</div>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/40" aria-hidden="true">
+            <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-aqua-400 transition-[width] duration-700 ease-out" style={{ width: `${keptShare}%` }} />
           </div>
         </div>
 
-        {/* Real-time KPI Tiles */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4.5">
-            <span className="text-xs font-medium text-zinc-400 block">Simulated Monthly Spend</span>
-            <div className="text-2xl font-semibold text-zinc-100 mt-1 tabular">
-              {formatMoney(simulated.simMonthly, currency)}
-            </div>
-            <div className="text-xs text-zinc-500 mt-1 tabular">
-              Base: {formatMoney(baseMonthly, currency)}/mo
-            </div>
+        <div className="spotlight surface lift reveal p-5" style={{ "--i": 1 } as React.CSSProperties}>
+          <span className="block text-[13px] font-semibold text-zinc-400">Annual Cash Recovery</span>
+          <div className="tabular mt-3 text-[1.9rem] font-extrabold leading-none tracking-tight text-emerald-300">
+            <AnimatedNumber value={simulated.annualSaved} format={(v) => `+${money(v)}`} duration={800} />
           </div>
+          <div className="mt-2 text-xs text-zinc-500">Recaptured discretionary capital</div>
+        </div>
 
-          <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4.5">
-            <span className="text-xs font-medium text-zinc-400 block">Annual Cash Recovery</span>
-            <div className="text-2xl font-semibold text-emerald-400 mt-1 tabular">
-              +{formatMoney(simulated.annualSaved, currency)}
-            </div>
-            <div className="text-xs text-zinc-500 mt-1">
-              Recaptured discretionary capital
-            </div>
+        <div className="spotlight surface lift reveal p-5" style={{ "--i": 2 } as React.CSSProperties}>
+          <span className="block text-[13px] font-semibold text-zinc-400">5-Yr Compounded Yield (7%)</span>
+          <div className="tabular mt-3 text-[1.9rem] font-extrabold leading-none tracking-tight text-zinc-50">
+            <AnimatedNumber value={simulated.fiveYearRecovery} format={(v) => `+${money(v)}`} duration={800} />
           </div>
+          <div className="mt-2 text-xs text-zinc-500">If invested in standard index yield</div>
+        </div>
 
-          <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4.5">
-            <span className="text-xs font-medium text-zinc-400 block">5-Yr Compounded Yield (7%)</span>
-            <div className="text-2xl font-semibold text-zinc-100 mt-1 tabular">
-              +{formatMoney(simulated.fiveYearRecovery, currency)}
-            </div>
-            <div className="text-xs text-zinc-500 mt-1">
-              If invested in standard index yield
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4.5">
-            <span className="text-xs font-medium text-zinc-400 block">Projected Fatigue (SFI)</span>
-            <div className="text-2xl font-semibold text-zinc-100 mt-1 tabular">
+        <div className="spotlight surface lift reveal flex items-center justify-between gap-3 p-5" style={{ "--i": 3 } as React.CSSProperties}>
+          <div>
+            <span className="block text-[13px] font-semibold text-zinc-400">Projected Fatigue (SFI)</span>
+            <div className="tabular mt-3 text-[1.9rem] font-extrabold leading-none tracking-tight text-zinc-50">
               {simulated.simSFI}
-              <span className="text-xs text-zinc-500 font-normal"> / 100</span>
+              <span className="text-xs font-normal text-zinc-500"> / 100</span>
             </div>
-            <div className="text-xs text-zinc-500 mt-1">
+            <div className="mt-2 text-xs text-zinc-500">
               {simulated.retainedCount} active • {simulated.redundantCount} overlaps
             </div>
           </div>
-        </section>
+          <RingGauge value={simulated.simSFI} color={sfiColor} size={76} thickness={4}>
+            <span className="text-xs font-extrabold" style={{ color: sfiColor }}>
+              {simulated.simSFI}
+            </span>
+          </RingGauge>
+        </div>
+      </section>
 
-        {/* Interactive List */}
-        <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 overflow-hidden">
-          <div className="px-5 py-3 border-b border-zinc-800/80 bg-zinc-950/60 flex items-center justify-between text-xs text-zinc-400 font-medium">
-            <span>Service Controls</span>
-            <span>{pausedCount} Paused • {annualizedCount} Annualized</span>
-          </div>
+      {/* Interactive List */}
+      <section className="surface overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/[0.07] bg-black/25 px-5 py-3.5 text-xs font-semibold text-zinc-400">
+          <span>Service Controls</span>
+          <span className="tabular">
+            <span className={cn("transition-colors", pausedCount > 0 && "text-rose-300")}>{pausedCount} Paused</span> •{" "}
+            <span className={cn("transition-colors", annualizedCount > 0 && "text-brand-300")}>{annualizedCount} Annualized</span>
+          </span>
+        </div>
 
-          <div className="divide-y divide-zinc-800/60">
-            {activeSubs.length > 0 ? (
-              activeSubs.map((sub) => {
-                const isPaused = pausedIds.has(sub.id);
-                const isAnnual = annualizedIds.has(sub.id);
+        <div className="divide-y divide-white/[0.05]">
+          {activeSubs.length > 0 ? (
+            activeSubs.map((sub, i) => {
+              const isPaused = pausedIds.has(sub.id);
+              const isAnnual = annualizedIds.has(sub.id);
+              const accent = categoryColor(sub.category);
 
-                return (
-                  <div
-                    key={sub.id}
-                    className={`px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
-                      isPaused ? "bg-zinc-950/40 opacity-50" : "hover:bg-zinc-800/20"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        aria-pressed={isPaused}
-                        aria-label={`${isPaused ? "Resume" : "Pause"} ${sub.name} in simulation`}
-                        onClick={() => togglePause(sub.id)}
-                        className={`size-6 rounded-md border flex items-center justify-center text-xs font-medium transition-colors cursor-pointer ${
-                          isPaused
-                            ? "bg-zinc-800 border-zinc-700 text-zinc-500"
-                            : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                        }`}
-                        title={isPaused ? "Resume in simulation" : "Pause in simulation"}
-                      >
-                        <span aria-hidden="true">{isPaused ? "✕" : "✓"}</span>
-                      </button>
+              return (
+                <div
+                  key={sub.id}
+                  style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
+                  className={cn(
+                    "reveal flex flex-col justify-between gap-3 px-5 py-4 transition-colors duration-300 sm:flex-row sm:items-center",
+                    isPaused ? "bg-black/25" : "hover:bg-white/[0.03]"
+                  )}
+                >
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      aria-pressed={isPaused}
+                      aria-label={`${isPaused ? "Resume" : "Pause"} ${sub.name} in simulation`}
+                      onClick={() => togglePause(sub.id)}
+                      className={cn(
+                        "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border transition-all duration-300 active:scale-90",
+                        isPaused
+                          ? "border-white/10 bg-white/[0.04] text-zinc-500 hover:text-zinc-300"
+                          : "border-emerald-300/30 bg-emerald-400/12 text-emerald-300 shadow-[0_0_18px_-4px_rgb(47_216_138/0.55)] hover:bg-emerald-400/20"
+                      )}
+                      title={isPaused ? "Resume in simulation" : "Pause in simulation"}
+                    >
+                      {isPaused ? <XIcon className="size-4" /> : <CheckIcon className="size-4" />}
+                    </button>
 
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm text-zinc-200">{sub.name}</span>
-                          <span className="text-[11px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 capitalize">
-                            {sub.category}
-                          </span>
-                          {isPaused && (
-                            <span className="text-[11px] text-zinc-500 font-medium">
-                              Paused
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-zinc-500 tabular mt-0.5">
-                          Current: {formatMoney(sub.price, currency)}/{sub.frequency}
-                        </div>
+                    <SubLogo name={sub.name} className={cn("size-10 transition-all duration-300", isPaused && "opacity-40 grayscale")} />
+
+                    <div className={cn("transition-opacity duration-300", isPaused && "opacity-50")}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-bold text-zinc-100">{sub.name}</span>
+                        <span className="flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium capitalize text-zinc-400">
+                          <span className="size-1.5 rounded-full" style={{ background: accent }} />
+                          {sub.category}
+                        </span>
+                        {isPaused && <span className="text-[11px] font-semibold text-zinc-500">Paused</span>}
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 self-end sm:self-center">
-                      {!isPaused && sub.frequency !== "yearly" && (
-                        <button
-                          type="button"
-                          aria-pressed={isAnnual}
-                          onClick={() => toggleAnnualized(sub.id)}
-                          className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer ${
-                            isAnnual
-                              ? "bg-zinc-200 text-zinc-950 font-medium"
-                              : "bg-zinc-800/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
-                          }`}
-                        >
-                          {isAnnual ? `Annualized (-${Math.round(ANNUAL_PLAN_DISCOUNT * 100)}%)` : "Annual plan"}
-                        </button>
-                      )}
-                      {!isPaused && sub.frequency === "yearly" && (
-                        <span className="text-[11px] text-zinc-500 font-medium px-2 py-1">
-                          Annual
-                        </span>
-                      )}
-
-                      <div className="text-right min-w-[70px]">
-                        <span className="text-xs font-medium text-zinc-200 tabular">
-                          {isPaused
-                            ? `${formatMoney(0, currency)}/mo`
-                            : isAnnual
-                            ? `${formatMoney(toMonthly(sub.price, sub.frequency) * (1 - ANNUAL_PLAN_DISCOUNT), currency)}/mo`
-                            : `${formatMoney(toMonthly(sub.price, sub.frequency), currency)}/mo`}
-                        </span>
+                      <div className="tabular mt-0.5 text-xs text-zinc-500">
+                        Current: {money(sub.price)}/{sub.frequency}
                       </div>
                     </div>
                   </div>
-                );
-              })
-            ) : (
-              <div className="py-12 text-center text-xs text-zinc-500">
-                No active subscriptions to simulate. Add subscriptions to model portfolio arbitrage and annualization savings.
-              </div>
-            )}
-          </div>
-        </section>
-      </main>
 
-      <SubscriptionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-      />
+                  <div className="flex items-center gap-4 self-end sm:self-center">
+                    {!isPaused && sub.frequency !== "yearly" && (
+                      <button
+                        type="button"
+                        aria-pressed={isAnnual}
+                        onClick={() => toggleAnnualized(sub.id)}
+                        className={cn(
+                          "cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-300 active:scale-95",
+                          isAnnual
+                            ? "bg-gradient-to-b from-brand-500 to-brand-600 text-white shadow-[0_6px_18px_-6px_rgb(124_92_255/0.9)]"
+                            : "border border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] hover:text-zinc-100"
+                        )}
+                      >
+                        {isAnnual ? `Annualized (-${Math.round(ANNUAL_PLAN_DISCOUNT * 100)}%)` : "Annual plan"}
+                      </button>
+                    )}
+                    {!isPaused && sub.frequency === "yearly" && <span className="px-2 py-1 text-[11px] font-semibold text-zinc-500">Annual</span>}
+
+                    <div className="min-w-[84px] text-right">
+                      <span className={cn("tabular text-sm font-bold transition-colors duration-300", isPaused ? "text-zinc-600 line-through" : isAnnual ? "text-brand-200" : "text-zinc-100")}>
+                        {isPaused
+                          ? `${money(toMonthly(sub.price, sub.frequency))}/mo`
+                          : isAnnual
+                            ? `${money(toMonthly(sub.price, sub.frequency) * (1 - ANNUAL_PLAN_DISCOUNT))}/mo`
+                            : `${money(toMonthly(sub.price, sub.frequency))}/mo`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="py-14 text-center text-xs text-zinc-500">
+              No active subscriptions to simulate. Add subscriptions to model portfolio arbitrage and annualization savings.
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }

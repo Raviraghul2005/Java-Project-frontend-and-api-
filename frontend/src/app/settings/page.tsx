@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { Navbar } from "@/components/Navbar";
-import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DownloadIcon, FileIcon, PlusIcon, SparklesIcon, TrashIcon } from "@/components/ui/icons";
 import { useApp } from "@/context/AppContext";
+import { initialsOf } from "@/lib/people";
+import { cn } from "@/lib/cn";
 import { api } from "@/lib/api";
 import { downloadFile, exportFilename, subscriptionsToCsv, subscriptionsToJson } from "@/lib/export";
 
@@ -24,7 +25,6 @@ export default function SettingsPage() {
     addToast
   } = useApp();
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [testingHealth, setTestingHealth] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<"clear" | "demo" | null>(null);
@@ -111,184 +111,143 @@ export default function SettingsPage() {
     setBusy(false);
   };
 
-  const secondaryButton =
-    "px-3.5 py-1.5 rounded-md text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed";
+  const endpoints = [
+    ["Health Endpoint", "GET /api"],
+    ["Fatigue Audit Endpoint", "GET /api/v1/analytics/audit"],
+    ["Subscriptions Endpoint", "GET /api/v1/subscriptions/user/:id"],
+    ["Rate Limiting", "Per-IP token bucket (stricter on sign-in)"]
+  ];
 
   return (
-    <div className="flex-1 flex flex-col bg-[#09090b]">
-      <Navbar onOpenNewModal={() => setIsModalOpen(true)} />
+    <div className="page-enter mx-auto max-w-4xl space-y-6 pt-2">
+      {/* Header */}
+      <header>
+        <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
+          <span className="text-gradient">System & API Settings</span>
+        </h1>
+        <p className="mt-2 text-sm text-zinc-400">Monitor API connectivity with the Spring Boot backend and manage data exports.</p>
+      </header>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-7">
-        {/* Header */}
+      {/* Backend API status card */}
+      <section className="spotlight surface space-y-5 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-zinc-50">Spring Boot REST Service</h2>
+            <p className="mt-0.5 font-mono text-xs text-zinc-500">{API_ORIGIN}/api/v1</p>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <span
+              className={cn(
+                "flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset",
+                isBackendConnected ? "bg-emerald-400/10 text-emerald-300 ring-emerald-300/25" : "bg-rose-500/10 text-rose-300 ring-rose-400/25"
+              )}
+            >
+              <span className="relative flex size-2">
+                <span className={cn("absolute inline-flex size-full rounded-full opacity-60", isBackendConnected ? "animate-ping-slow bg-emerald-400" : "bg-rose-400")} />
+                <span className={cn("relative inline-flex size-2 rounded-full", isBackendConnected ? "bg-emerald-400" : "bg-rose-400")} />
+              </span>
+              {isBackendConnected ? "Online" : "Offline"}
+            </span>
+
+            <button type="button" onClick={handlePingBackend} disabled={testingHealth} className="btn-ghost disabled:opacity-50">
+              {testingHealth ? "Pinging..." : "Check Status"}
+            </button>
+          </div>
+        </div>
+
+        <dl className="space-y-2.5 rounded-xl border border-white/[0.07] bg-black/30 p-4 text-xs">
+          {endpoints.map(([label, value]) => (
+            <div key={label} className="flex flex-col justify-between gap-0.5 sm:flex-row sm:gap-4">
+              <dt className="text-zinc-500">{label}:</dt>
+              <dd className="font-mono text-zinc-200">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      {/* Security context */}
+      <section className="spotlight surface space-y-4 p-6">
+        <h2 className="text-base font-bold text-zinc-50">Security & Authentication Context</h2>
+
+        <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+          <div className="flex items-center gap-3.5 rounded-xl border border-white/[0.07] bg-black/30 p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-blush-400 text-sm font-extrabold text-white">
+              {user ? initialsOf(user.name) : "?"}
+            </span>
+            <div className="min-w-0">
+              <span className="mb-0.5 block text-[11px] text-zinc-500">Active User</span>
+              <span className="block truncate text-sm font-semibold text-zinc-100">{user ? user.name : "Not signed in"}</span>
+              <span className="block truncate text-[11px] text-zinc-500">{user?.email || "—"}</span>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/[0.07] bg-black/30 p-4">
+            <span className="mb-1 block text-[11px] text-zinc-500">JWT Bearer Token</span>
+            <span className="block truncate font-mono text-xs text-zinc-200">{token ? `${token.substring(0, 12)}…` : "None"}</span>
+            <span className="mt-1 block text-[11px] text-zinc-500">Algorithm: HMAC-SHA256</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Data Portability (Export, Import & Reset) */}
+      <section className="spotlight surface space-y-5 p-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-            System & API Settings
-          </h1>
-          <p className="text-sm text-zinc-400 mt-0.5">
-            Monitor API connectivity with the Spring Boot backend and manage data exports.
+          <h2 className="text-base font-bold text-zinc-50">Data Portability & Backup</h2>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            Export subscriptions as clean JSON, import backups (saved to your account), or add sample data.
           </p>
         </div>
 
-        {/* Backend API status card */}
-        <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-zinc-200">
-                Spring Boot REST Service
-              </h2>
-              <p className="text-xs text-zinc-500 font-mono mt-0.5">
-                {API_ORIGIN}/api/v1
-              </p>
-            </div>
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept=".json,application/json"
+          aria-label="Import subscriptions from a JSON file"
+          className="hidden"
+        />
 
-            <div className="flex items-center gap-2">
-              <span
-                className={`text-xs px-2.5 py-1 rounded-md font-medium border flex items-center gap-1.5 ${
-                  isBackendConnected
-                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                    : "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                }`}
-              >
-                <span
-                  className={`size-1.5 rounded-full ${
-                    isBackendConnected ? "bg-emerald-400" : "bg-rose-400"
-                  }`}
-                />
-                {isBackendConnected ? "Online" : "Offline"}
-              </span>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button type="button" onClick={handleExportJson} className="btn-primary">
+            <DownloadIcon className="size-4" />
+            <span>Export JSON ({subscriptions.length})</span>
+          </button>
 
-              <button
-                type="button"
-                onClick={handlePingBackend}
-                disabled={testingHealth}
-                className="px-3 py-1 rounded-md text-xs font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
-              >
-                {testingHealth ? "Pinging..." : "Check Status"}
-              </button>
-            </div>
-          </div>
+          <button type="button" onClick={handleExportCsv} className="btn-ghost">
+            <FileIcon className="size-3.5" />
+            <span>Export CSV</span>
+          </button>
 
-          <div className="p-3.5 rounded-lg bg-zinc-950/80 border border-zinc-800/60 space-y-1.5 text-xs text-zinc-400">
-            <div className="flex justify-between">
-              <span className="text-zinc-500">Health Endpoint:</span>
-              <span className="font-mono text-zinc-300">GET /api</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-zinc-500">Fatigue Audit Endpoint:</span>
-              <span className="font-mono text-zinc-300">GET /api/v1/analytics/audit</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-zinc-500">Subscriptions Endpoint:</span>
-              <span className="font-mono text-zinc-300">GET /api/v1/subscriptions/user/:id</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-zinc-500">Rate Limiting:</span>
-              <span className="font-mono text-zinc-300">Per-IP token bucket (stricter on sign-in)</span>
-            </div>
-          </div>
+          <button type="button" onClick={handleCopyJson} className="btn-ghost">
+            <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <rect x="9" y="9" width="12" height="12" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            <span>Copy JSON</span>
+          </button>
+
+          <button type="button" onClick={handleTriggerImport} disabled={busy} className="btn-ghost disabled:cursor-not-allowed disabled:opacity-50">
+            <PlusIcon className="size-3.5" />
+            <span>{busy ? "Working…" : "Import JSON"}</span>
+          </button>
+
+          <button type="button" onClick={() => setConfirming("demo")} disabled={busy} className="btn-ghost disabled:cursor-not-allowed disabled:opacity-50">
+            <SparklesIcon className="size-3.5" />
+            Load Demo Presets
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setConfirming("clear")}
+            disabled={busy || subscriptions.length === 0}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-rose-400/25 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-300 transition-all duration-300 hover:border-rose-400/50 hover:bg-rose-500/20 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <TrashIcon className="size-3.5" />
+            Clear All Subscriptions
+          </button>
         </div>
-
-        {/* Security context */}
-        <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-5 space-y-3.5">
-          <h2 className="text-sm font-semibold text-zinc-200">
-            Security & Authentication Context
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div className="p-3 rounded-lg bg-zinc-950/80 border border-zinc-800/60">
-              <span className="text-zinc-500 block text-[11px] mb-1">Active User</span>
-              <span className="text-zinc-200 font-medium">{user ? user.name : "Not signed in"}</span>
-              <span className="text-zinc-500 block text-[11px] mt-0.5">{user?.email || "—"}</span>
-            </div>
-
-            <div className="p-3 rounded-lg bg-zinc-950/80 border border-zinc-800/60">
-              <span className="text-zinc-500 block text-[11px] mb-1">JWT Bearer Token</span>
-              <span className="text-zinc-300 font-mono text-[11px] truncate block">
-                {token ? `${token.substring(0, 12)}…` : "None"}
-              </span>
-              <span className="text-zinc-500 block text-[11px] mt-0.5">Algorithm: HMAC-SHA256</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Data Portability (Export, Import & Reset) */}
-        <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-5 space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-zinc-200">
-              Data Portability & Backup
-            </h2>
-            <p className="text-xs text-zinc-400 mt-0.5">
-              Export subscriptions as clean JSON, import backups (saved to your account), or add sample data.
-            </p>
-          </div>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept=".json,application/json"
-            aria-label="Import subscriptions from a JSON file"
-            className="hidden"
-          />
-
-          <div className="flex flex-wrap items-center gap-2.5 pt-1">
-            <button
-              type="button"
-              onClick={handleExportJson}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              <span>Export JSON ({subscriptions.length})</span>
-            </button>
-
-            <button type="button" onClick={handleExportCsv} className={secondaryButton}>
-              <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span>Export CSV</span>
-            </button>
-
-            <button type="button" onClick={handleCopyJson} className={secondaryButton}>
-              <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              <span>Copy JSON</span>
-            </button>
-
-            <button type="button" onClick={handleTriggerImport} disabled={busy} className={secondaryButton}>
-              <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              <span>{busy ? "Working…" : "Import JSON"}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setConfirming("demo")}
-              disabled={busy}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
-            >
-              Load Demo Presets
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setConfirming("clear")}
-              disabled={busy || subscriptions.length === 0}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/20 border border-rose-900/40 hover:border-rose-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Clear All Subscriptions
-            </button>
-          </div>
-        </div>
-      </main>
-
-      <SubscriptionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-      />
+      </section>
 
       <ConfirmDialog
         isOpen={confirming !== null}
