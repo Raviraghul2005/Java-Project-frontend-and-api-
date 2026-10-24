@@ -3,11 +3,11 @@
 import React, { useRef, useState } from "react";
 import Link from "next/link";
 import { CadenceStrip } from "@/components/CadenceStrip";
-import { Navbar } from "@/components/Navbar";
-import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { CheckIcon, SparklesIcon, UploadIcon } from "@/components/ui/icons";
 import { useApp } from "@/context/AppContext";
 import { api } from "@/lib/api";
 import { monthSpan } from "@/lib/cadenceStrip";
+import { cn } from "@/lib/cn";
 import { formatMoney } from "@/lib/money";
 import { DetectedSubscription, SharedDescriptorSummary, StatementAnalysis } from "@/types";
 
@@ -21,19 +21,22 @@ interface Span {
   lastMonth: string;
 }
 
+const CHIP = "rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset";
+
 /** "stopped" (no charge for two billing dates) or "overdue" (one missing); nothing for an active subscription. */
 function StatusBadge({ status }: { status: DetectedSubscription["status"] }) {
   if (status === "stopped") {
-    return <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">stopped</span>;
+    return <span className={cn(CHIP, "bg-zinc-500/10 text-zinc-400 ring-zinc-400/20")}>stopped</span>;
   }
   if (status === "overdue") {
-    return <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300">overdue</span>;
+    return <span className={cn(CHIP, "bg-amber-400/10 text-amber-300 ring-amber-300/25")}>overdue</span>;
   }
   return null;
 }
 
 interface StreamRowProps {
   d: DetectedSubscription;
+  index: number;
   name: string;
   onName: (name: string) => void;
   span: Span | null;
@@ -45,46 +48,40 @@ interface StreamRowProps {
 }
 
 /** One subscription found under a shared descriptor: editable name, month-by-month strip, badges. */
-function StreamRow({ d, name, onName, span, currency, added, adding, busy, onAdd }: StreamRowProps) {
+function StreamRow({ d, index, name, onName, span, currency, added, adding, busy, onAdd }: StreamRowProps) {
   const stopped = d.status === "stopped";
   const canAdd = !d.alreadyTracked && !stopped;
   // streamId holds spaces, "#" and "." ("google play#MONTHLY#14#2.99"), which don't belong in an element id.
   const nameId = `stream-name-${d.streamId.replace(/[^A-Za-z0-9_-]/g, "-")}`;
   return (
-    <li className="py-4 first:pt-0 last:pb-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-      <div className="min-w-0 space-y-2 flex-1">
+    <li
+      style={{ "--i": index } as React.CSSProperties}
+      className="reveal flex flex-col justify-between gap-4 py-5 first:pt-0 last:pb-0 lg:flex-row lg:items-center"
+    >
+      <div className="min-w-0 flex-1 space-y-3">
         <label htmlFor={nameId} className="sr-only">
           Name for {d.name}
         </label>
-        <input
-          id={nameId}
-          type="text"
-          value={name}
-          maxLength={MAX_NAME_LENGTH}
-          onChange={(e) => onName(e.target.value)}
-          className="w-full max-w-md px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 text-sm font-medium focus:outline-none focus:border-zinc-600"
-        />
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">{d.frequency}</span>
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">{d.confidence}% confidence</span>
-          {d.groupedCharges > 0 && (
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">grouped ×{d.groupedCharges}</span>
-          )}
+        <input id={nameId} type="text" value={name} maxLength={MAX_NAME_LENGTH} onChange={(e) => onName(e.target.value)} className="field max-w-md font-semibold" />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={cn(CHIP, "bg-white/[0.06] text-zinc-300 ring-white/10")}>{d.frequency}</span>
+          <span className={cn(CHIP, "bg-white/[0.06] text-zinc-300 ring-white/10")}>{d.confidence}% confidence</span>
+          {d.groupedCharges > 0 && <span className={cn(CHIP, "bg-brand-500/15 text-brand-200 ring-brand-300/25")}>grouped ×{d.groupedCharges}</span>}
           {d.previousAmount != null && (
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300">
+            <span className={cn(CHIP, "bg-amber-400/10 text-amber-300 ring-amber-300/25")}>
               price changed from {formatMoney(d.previousAmount, currency)}
               {d.priceChangedOn ? ` on ${d.priceChangedOn}` : ""}
             </span>
           )}
           <StatusBadge status={d.status} />
           {d.alreadyTracked && (
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300">
+            <span className={cn(CHIP, "bg-emerald-400/10 text-emerald-300 ring-emerald-300/25")}>
               already tracked{d.trackedName ? ` as ${d.trackedName}` : ""}
             </span>
           )}
         </div>
         {span && <CadenceStrip charges={d.charges ?? []} firstMonth={span.firstMonth} lastMonth={span.lastMonth} />}
-        <p className="text-xs text-zinc-400">
+        <p className="text-xs leading-relaxed text-zinc-400">
           {formatMoney(d.amount, currency)} · {d.nextExpected ? `next expected ${d.nextExpected}` : "no longer charged"} · {d.evidence}
         </p>
       </div>
@@ -95,7 +92,7 @@ function StreamRow({ d, name, onName, span, currency, added, adding, busy, onAdd
           aria-label={`Add ${name.trim() || d.name} to tracker`}
           onClick={onAdd}
           disabled={added || busy || name.trim().length < 2}
-          className="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 disabled:opacity-40 transition-colors cursor-pointer"
+          className="btn-primary shrink-0"
         >
           {added ? "Added" : adding ? "Adding…" : "Add to tracker"}
         </button>
@@ -126,21 +123,22 @@ function SharedBlock({ summary, streams, names, setNames, span, currency, added,
       : `${summary.descriptor} (${summary.label})`;
   const nameOf = (d: DetectedSubscription) => names[d.streamId] ?? d.trackedName ?? d.name;
   return (
-    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-5">
-      <h2 className="text-base font-semibold text-zinc-100">
+    <div className="spotlight surface p-6">
+      <h2 className="text-lg font-bold tracking-tight text-zinc-50">
         {title} hides {n} {n === 1 ? "subscription" : "subscriptions"}
       </h2>
       {summary.oneOffCount > 0 && (
-        <p className="text-xs text-zinc-500 mt-0.5">
+        <p className="mt-1 text-xs text-zinc-500">
           {summary.oneOffCount} one-off {summary.oneOffCount === 1 ? "purchase" : "purchases"} (total{" "}
           {formatMoney(summary.oneOffTotal, currency)}) {summary.oneOffCount === 1 ? "was" : "were"} left out
         </p>
       )}
-      <ul className="mt-4 divide-y divide-zinc-800/80">
-        {streams.map((d) => (
+      <ul className="mt-5 divide-y divide-white/[0.06]">
+        {streams.map((d, i) => (
           <StreamRow
             key={d.streamId}
             d={d}
+            index={i}
             name={nameOf(d)}
             onName={(name) => setNames((prev) => ({ ...prev, [d.streamId]: name }))}
             span={span}
@@ -158,10 +156,10 @@ function SharedBlock({ summary, streams, names, setNames, span, currency, added,
 
 export default function ScanPage() {
   const { user, isBackendConnected, createSub, addToast } = useApp();
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<StatementAnalysis | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [currency, setCurrency] = useState("USD");
@@ -246,88 +244,95 @@ export default function ScanPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#09090b]">
-      <Navbar onOpenNewModal={() => setIsModalOpen(true)} />
+    <div className="page-enter mx-auto max-w-5xl space-y-6 pt-2">
+      <header>
+        <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
+          <span className="text-gradient">Scan a bank statement</span>
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm text-zinc-400">
+          Upload a statement CSV and Bill Pilot finds the charges that repeat on a schedule, including subscriptions you forgot to track.
+          The file is analysed in memory and never stored.
+        </p>
+      </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Scan a bank statement</h1>
-          <p className="text-sm text-zinc-400 mt-0.5 max-w-2xl">
-            Upload a statement CSV and Bill Pilot finds the charges that repeat on a schedule, including
-            subscriptions you forgot to track. The file is analysed in memory and never stored.
-          </p>
+      {!canScan && (
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.06] p-4 text-sm text-amber-200">
+          {user ? (
+            <>The backend is offline. Start the Spring Boot API on port 5500 to scan statements.</>
+          ) : (
+            <>
+              Statement scanning needs an account.{" "}
+              <Link href="/auth" className="underline underline-offset-2">
+                Sign in
+              </Link>{" "}
+              to continue.
+            </>
+          )}
         </div>
+      )}
 
-        {!canScan && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-200">
-            {user ? (
-              <>The backend is offline. Start the Spring Boot API on port 5500 to scan statements.</>
-            ) : (
-              <>
-                Statement scanning needs an account.{" "}
-                <Link href="/auth" className="underline underline-offset-2">
-                  Sign in
-                </Link>{" "}
-                to continue.
-              </>
+      <section className="spotlight surface space-y-5 p-6">
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,text/csv"
+          aria-label="Choose a bank statement CSV file"
+          className="hidden"
+          onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+        />
+        <button
+          type="button"
+          onDragEnter={() => setDragging(true)}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            pickFile(e.dataTransfer.files?.[0] ?? null);
+          }}
+          onClick={() => inputRef.current?.click()}
+          className={cn(
+            "group relative flex w-full cursor-pointer flex-col items-center gap-3 overflow-hidden rounded-2xl border-2 border-dashed px-6 py-12 text-center transition-all duration-300 focus-visible:outline-none",
+            dragging
+              ? "scale-[1.012] border-brand-400 bg-brand-500/12 shadow-[0_0_60px_-12px_rgb(124_92_255/0.7)]"
+              : file
+                ? "border-emerald-300/40 bg-emerald-400/[0.04]"
+                : "border-white/[0.14] hover:border-brand-400/60 hover:bg-brand-500/[0.05] focus-visible:border-brand-400"
+          )}
+        >
+          {scanning && <span className="scan-beam" aria-hidden="true" />}
+          <span
+            className={cn(
+              "flex size-14 items-center justify-center rounded-2xl transition-all duration-500",
+              file ? "bg-emerald-400/15 text-emerald-300" : "bg-brand-500/15 text-brand-300 group-hover:-translate-y-1 group-hover:scale-110",
+              dragging && "-translate-y-2 scale-110"
             )}
-          </div>
-        )}
-
-        <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-5 space-y-4">
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".csv,text/csv"
-            aria-label="Choose a bank statement CSV file"
-            className="hidden"
-            onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-          />
-          <button
-            type="button"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              pickFile(e.dataTransfer.files?.[0] ?? null);
-            }}
-            onClick={() => inputRef.current?.click()}
-            className="w-full cursor-pointer rounded-lg border border-dashed border-zinc-700 hover:border-zinc-500 focus-visible:border-zinc-400 focus-visible:outline-none transition-colors p-8 text-center"
           >
-            <span className="block text-sm text-zinc-200 font-medium">
-              {file ? file.name : "Drop a .csv statement here or click to choose"}
-            </span>
-            <span className="block text-xs text-zinc-500 mt-1">
-              Needs date, description and amount (or debit) columns. Max 2 MB.
-            </span>
-          </button>
-          <p className="text-xs text-zinc-500">
-            <a
-              href="/sample-statement.csv"
-              download
-              className="underline underline-offset-2 hover:text-zinc-300"
-            >
-              Download a sample statement
-            </a>
-            {" · "}
-            <a
-              href="/sample-statement-shared.csv"
-              download
-              className="underline underline-offset-2 hover:text-zinc-300"
-            >
-              Download a sample with shared descriptors
-            </a>
-          </p>
+            {file ? <CheckIcon className="size-7" /> : <UploadIcon className="size-7" />}
+          </span>
+          <span className="block text-sm font-semibold text-zinc-100">{file ? file.name : "Drop a .csv statement here or click to choose"}</span>
+          <span className="block text-xs text-zinc-500">Needs date, description and amount (or debit) columns. Max 2 MB.</span>
+        </button>
 
-          <div className="flex items-center gap-2">
-            <label htmlFor="scan-currency" className="text-xs font-medium text-zinc-300">
+        <p className="text-xs text-zinc-500">
+          <a href="/sample-statement.csv" download className="underline underline-offset-4 transition-colors hover:text-brand-300">
+            Download a sample statement
+          </a>
+          {" · "}
+          <a href="/sample-statement-shared.csv" download className="underline underline-offset-4 transition-colors hover:text-brand-300">
+            Download a sample with shared descriptors
+          </a>
+        </p>
+
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex items-center gap-2.5">
+            <label htmlFor="scan-currency" className="text-xs font-semibold text-zinc-300">
               Statement currency
             </label>
-            <select
-              id="scan-currency"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs focus:outline-none focus:border-zinc-600"
-            >
+            <select id="scan-currency" value={currency} onChange={(e) => setCurrency(e.target.value)} className="field w-auto cursor-pointer py-1.5 text-xs">
               {CURRENCIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -336,104 +341,92 @@ export default function ScanPage() {
             </select>
           </div>
 
-          {error && (
-            <p role="alert" className="text-sm text-red-400">
-              {error}
-            </p>
-          )}
-
-          <button
-            type="button"
-            onClick={scan}
-            disabled={!file || scanning || !canScan}
-            className="px-4 py-2 rounded-lg text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
+          <button type="button" onClick={scan} disabled={!file || scanning || !canScan} className="btn-primary">
+            <SparklesIcon className={cn("size-4", scanning && "animate-spin")} />
             {scanning ? "Scanning…" : "Scan for subscriptions"}
           </button>
-        </section>
+        </div>
 
-        {result && (
-          <section className="space-y-4">
-            <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-5">
-              <p className="text-lg font-semibold text-zinc-100">
-                {result.detected.length === 0
-                  ? "No recurring charges found"
-                  : `Found ${result.detected.length} recurring ${result.detected.length === 1 ? "charge" : "charges"} · ${formatMoney(result.detectedMonthlyTotal, currency)}/month`}
-              </p>
-              <p className="text-sm text-zinc-400 mt-1">
-                {result.untrackedCount > 0
-                  ? `${result.untrackedCount} ${result.untrackedCount === 1 ? "isn't" : "aren't"} in your tracker yet (${formatMoney(result.untrackedMonthlyTotal, currency)}/month, ${formatMoney(result.untrackedMonthlyTotal * 12, currency)}/year).`
-                  : result.detected.length > 0
-                    ? "Everything detected is already in your tracker."
-                    : "Scanned " + result.transactionsScanned + " transactions. Recurring charges need at least two matching payments on a regular schedule."}
-              </p>
-              <p className="text-xs text-zinc-500 mt-1">{result.transactionsScanned} transactions scanned</p>
-            </div>
-
-            {sharedBlocks.map(({ summary, streams }) => (
-              <SharedBlock
-                key={summary.key}
-                summary={summary}
-                streams={streams}
-                names={names}
-                setNames={setNames}
-                span={span}
-                currency={currency}
-                added={added}
-                adding={adding}
-                onAdd={addToTracker}
-              />
-            ))}
-
-            <ul className="space-y-3">
-              {ordinary.map((d) => (
-                <li
-                  key={d.streamId}
-                  className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-zinc-100">{d.name}</span>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">{d.frequency}</span>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
-                        {d.confidence}% confidence
-                      </span>
-                      {d.alreadyTracked && (
-                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300">
-                          already tracked
-                        </span>
-                      )}
-                      {d.previousAmount != null && (
-                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300">
-                          price changed from {formatMoney(d.previousAmount, currency)}
-                        </span>
-                      )}
-                      <StatusBadge status={d.status} />
-                    </div>
-                    <p className="text-xs text-zinc-400 mt-1">
-                      {formatMoney(d.amount, currency)} · {d.nextExpected ? `next expected ${d.nextExpected}` : "no longer charged"} · {d.evidence}
-                    </p>
-                  </div>
-
-                  {!d.alreadyTracked && d.status !== "stopped" && (
-                    <button
-                      type="button"
-                      aria-label={`Add ${d.name} to tracker`}
-                      onClick={() => addToTracker(d)}
-                      disabled={added.has(d.streamId) || adding !== null}
-                      className="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 disabled:opacity-40 transition-colors cursor-pointer"
-                    >
-                      {added.has(d.streamId) ? "Added" : adding === d.streamId ? "Adding…" : "Add to tracker"}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
+        {error && (
+          <p role="alert" className="animate-fade-up rounded-xl border border-rose-400/25 bg-rose-500/10 px-4 py-2.5 text-sm text-rose-300">
+            {error}
+          </p>
         )}
-      </main>
+      </section>
 
-      <SubscriptionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      {result && (
+        <section className="space-y-5">
+          <div className="spotlight surface animate-fade-up relative overflow-hidden p-6">
+            <div className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full bg-brand-500/20 blur-3xl" />
+            <p className="relative text-xl font-extrabold tracking-tight text-zinc-50">
+              {result.detected.length === 0
+                ? "No recurring charges found"
+                : `Found ${result.detected.length} recurring ${result.detected.length === 1 ? "charge" : "charges"} · ${formatMoney(result.detectedMonthlyTotal, currency)}/month`}
+            </p>
+            <p className="relative mt-1.5 text-sm text-zinc-400">
+              {result.untrackedCount > 0
+                ? `${result.untrackedCount} ${result.untrackedCount === 1 ? "isn't" : "aren't"} in your tracker yet (${formatMoney(result.untrackedMonthlyTotal, currency)}/month, ${formatMoney(result.untrackedMonthlyTotal * 12, currency)}/year).`
+                : result.detected.length > 0
+                  ? "Everything detected is already in your tracker."
+                  : "Scanned " + result.transactionsScanned + " transactions. Recurring charges need at least two matching payments on a regular schedule."}
+            </p>
+            <p className="relative mt-1 text-xs text-zinc-500">{result.transactionsScanned} transactions scanned</p>
+          </div>
+
+          {sharedBlocks.map(({ summary, streams }) => (
+            <SharedBlock
+              key={summary.key}
+              summary={summary}
+              streams={streams}
+              names={names}
+              setNames={setNames}
+              span={span}
+              currency={currency}
+              added={added}
+              adding={adding}
+              onAdd={addToTracker}
+            />
+          ))}
+
+          <ul className="space-y-3">
+            {ordinary.map((d, i) => (
+              <li
+                key={d.streamId}
+                style={{ "--i": i } as React.CSSProperties}
+                className="spotlight surface lift reveal flex flex-col justify-between gap-3 p-5 sm:flex-row sm:items-center"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-base font-bold text-zinc-50">{d.name}</span>
+                    <span className={cn(CHIP, "bg-white/[0.06] text-zinc-300 ring-white/10")}>{d.frequency}</span>
+                    <span className={cn(CHIP, "bg-white/[0.06] text-zinc-300 ring-white/10")}>{d.confidence}% confidence</span>
+                    {d.alreadyTracked && <span className={cn(CHIP, "bg-emerald-400/10 text-emerald-300 ring-emerald-300/25")}>already tracked</span>}
+                    {d.previousAmount != null && (
+                      <span className={cn(CHIP, "bg-amber-400/10 text-amber-300 ring-amber-300/25")}>price changed from {formatMoney(d.previousAmount, currency)}</span>
+                    )}
+                    <StatusBadge status={d.status} />
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">
+                    {formatMoney(d.amount, currency)} · {d.nextExpected ? `next expected ${d.nextExpected}` : "no longer charged"} · {d.evidence}
+                  </p>
+                </div>
+
+                {!d.alreadyTracked && d.status !== "stopped" && (
+                  <button
+                    type="button"
+                    aria-label={`Add ${d.name} to tracker`}
+                    onClick={() => addToTracker(d)}
+                    disabled={added.has(d.streamId) || adding !== null}
+                    className="btn-primary shrink-0"
+                  >
+                    {added.has(d.streamId) ? "Added" : adding === d.streamId ? "Adding…" : "Add to tracker"}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

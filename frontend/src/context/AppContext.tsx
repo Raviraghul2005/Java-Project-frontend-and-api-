@@ -11,7 +11,12 @@ interface ToastMessage {
   id: string;
   text: string;
   type: "success" | "error" | "info";
+  /** Set shortly before removal so the toast can play its exit animation. */
+  leaving?: boolean;
 }
+
+const TOAST_LIFETIME_MS = 4000;
+const TOAST_EXIT_MS = 300;
 
 interface AppContextType {
   user: User | null;
@@ -75,8 +80,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, text, type }]);
     setTimeout(() => {
+      setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
+    }, TOAST_LIFETIME_MS - TOAST_EXIT_MS);
+    setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    }, TOAST_LIFETIME_MS);
   }, []);
 
   const removeToast = useCallback((id: string) => {

@@ -22,9 +22,8 @@ const CURRENCIES = [
   { code: "AUD", label: "AUD ($)" }
 ];
 
-const inputClass =
-  "w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 placeholder-zinc-500 text-xs focus:outline-none focus:border-zinc-600 transition-colors";
-const labelClass = "block text-xs font-medium text-zinc-300 mb-1";
+const inputClass = "field";
+const labelClass = "mb-1.5 block text-xs font-semibold text-zinc-300";
 
 /**
  * The form is mounted only while the dialog is open, and keyed by the subscription being edited, so its
@@ -131,19 +130,19 @@ function SubscriptionModalContent({ onClose, editingSubscription }: Subscription
         if (mouseDownOnBackdrop.current && e.target === e.currentTarget) onClose();
         mouseDownOnBackdrop.current = false;
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto"
+      className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/65 p-4 backdrop-blur-sm"
     >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={id("title")}
-        className="w-full max-w-xl rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+        className="glass animate-scale-in relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl p-6 sm:p-7"
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-5">
+        <div className="mb-5 flex items-center justify-between border-b border-white/[0.07] pb-4">
           <div>
-            <h2 id={id("title")} className="text-base font-semibold text-zinc-100">
+            <h2 id={id("title")} className="text-lg font-bold tracking-tight text-zinc-50">
               {editingSubscription ? "Edit Subscription" : "Add Subscription"}
             </h2>
             <p className="text-xs text-zinc-400 mt-0.5">
@@ -156,7 +155,7 @@ function SubscriptionModalContent({ onClose, editingSubscription }: Subscription
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="size-7 rounded-md bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white transition-colors cursor-pointer"
+            className="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-white/[0.06] text-zinc-400 transition-all duration-200 hover:rotate-90 hover:bg-white/[0.12] hover:text-white"
           >
             <span aria-hidden="true">✕</span>
           </button>
@@ -166,13 +165,13 @@ function SubscriptionModalContent({ onClose, editingSubscription }: Subscription
         {!editingSubscription && (
           <div className="mb-5">
             <span className="block text-xs font-medium text-zinc-400 mb-2">Popular Presets</span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-32 overflow-y-auto p-1.5 rounded-lg bg-zinc-950 border border-zinc-800/80">
+            <div className="grid max-h-36 grid-cols-2 gap-1.5 overflow-y-auto rounded-2xl border border-white/[0.07] bg-black/30 p-2 sm:grid-cols-4">
               {PRESET_SUBSCRIPTIONS.map((preset) => (
                 <button
                   key={preset.name}
                   type="button"
                   onClick={() => handleSelectPreset(preset)}
-                  className="flex items-center gap-2 p-1.5 rounded-md hover:bg-zinc-800 text-left transition-colors cursor-pointer group"
+                  className="group flex cursor-pointer items-center gap-2 rounded-xl p-2 text-left transition-all duration-200 hover:bg-brand-500/15"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -368,18 +367,18 @@ function SubscriptionModalContent({ onClose, editingSubscription }: Subscription
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-zinc-800 mt-5">
+          <div className="mt-6 flex items-center justify-end gap-2.5 border-t border-white/[0.07] pt-5">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+              className="cursor-pointer rounded-xl px-4 py-2 text-[13px] font-semibold text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-4 py-1.5 rounded-lg text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 transition-colors disabled:opacity-50 cursor-pointer"
+              className="btn-primary px-5 py-2 text-[13px]"
             >
               {isSubmitting ? "Saving..." : editingSubscription ? "Save Changes" : "Create"}
             </button>

@@ -138,7 +138,7 @@ An interactive decision-support sandbox enabling users to simulate pausing redun
 | **Security & Auth** | Spring Security + JJWT | 0.12.6 (Stateless HMAC-SHA256) |
 | **Email Scheduler** | Spring Mail + `@Scheduled` | 3.5.16 (Gmail SMTP, MIME HTML) |
 | **Frontend Framework** | Next.js | 16.4.0 (Turbopack, App Router) |
-| **Frontend UI** | React 19 + Tailwind CSS | Dark Obsidian Theme |
+| **Frontend UI** | React 19 + Tailwind CSS 4 | Violet dark theme, hand-drawn SVG charts, CSS-only animation (no UI library), Plus Jakarta Sans self-hosted |
 
 ---
 
@@ -181,7 +181,9 @@ bill-pilot/
     │   │   ├── catalog/page.tsx                # Verified Preset Directory
     │   │   ├── auth/page.tsx                   # Sign In & Registration
     │   │   └── settings/page.tsx               # API Diagnostics & Data Export
-    │   ├── components/                         # Navbar, SubscriptionCard, FatigueGauge, Modal
+    │   ├── components/                         # SubscriptionCard, FatigueGauge, dialogs, toasts
+    │   │   ├── shell/                          # AppShell: sidebar, top bar, tab bar, command palette, bell
+    │   │   └── ui/                             # AreaChart, DonutChart, RingGauge, AnimatedNumber, icons ...
     │   ├── context/AppContext.tsx              # Unified Auth & State Store
     │   └── lib/api.ts                          # Resilient REST API Client
     └── public/logos/                           # Curated Brand Logos

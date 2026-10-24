@@ -23,7 +23,7 @@ export function CadenceStrip({ charges, firstMonth, lastMonth }: CadenceStripPro
 
   return (
     <div role="img" aria-label={label} className="flex items-end gap-1.5">
-      {cells.map((c) => (
+      {cells.map((c, i) => (
         <div key={c.month} title={`${c.label} ${c.month.slice(0, 4)}: ${MARK_TEXT[c.mark]}`} className="flex flex-col items-center gap-0.5">
           <span
             aria-hidden="true"
@@ -34,7 +34,11 @@ export function CadenceStrip({ charges, firstMonth, lastMonth }: CadenceStripPro
                   ? "size-2.5 rounded-full border-2 border-zinc-300"
                   : "size-2.5 rounded-full bg-zinc-300 border border-zinc-300"
             }
-            style={c.mark === "grouped" ? { background: "linear-gradient(90deg, #d4d4d8 50%, transparent 50%)" } : undefined}
+            style={{
+              animation: "pop 0.5s var(--ease-spring) backwards",
+              animationDelay: `${i * 45}ms`,
+              ...(c.mark === "grouped" ? { background: "linear-gradient(90deg, #d4d4d8 50%, transparent 50%)" } : {})
+            }}
           />
           <span aria-hidden="true" className="text-[9px] leading-none text-zinc-600">
             {c.label}
